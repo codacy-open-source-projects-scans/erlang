@@ -306,7 +306,9 @@ end
                rsa_digest_type/0,
                sha1/0,
                sha2/0,
-               sha3/0
+               sha3/0,
+               mldsa/0,
+               slh_dsa/0
              ]).
 
 -export_type([
@@ -2094,7 +2096,7 @@ rand_seed_nif(_Seed) -> ?nif_stub.
 
 
 -doc(#{group => <<"Random API">>,
-       since => <<"OTP @OTP-19841@">>}).
+       since => <<"OTP 28.3">>}).
 -doc """
 Generate a random integer in a specified range.
 

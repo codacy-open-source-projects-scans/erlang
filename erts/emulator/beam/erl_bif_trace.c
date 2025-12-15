@@ -2650,55 +2650,14 @@ erts_set_trace_pattern(ErtsCodeMFA *mfa, int specified,
 		       ErtsTracer meta_tracer, int is_blocking)
 {
     const ErtsCodeIndex code_ix = erts_active_code_ix();
-    Uint i, n, matches;
+    Uint i, n;
+    Uint matches = 0;
     BpFunction* fp;
 
-    erts_bp_match_export(&finish_bp.e, mfa, specified);
-
-    fp = finish_bp.e.matching;
-    n = finish_bp.e.matched;
-    matches = 0;
-
-    for (i = 0; i < n; i++) {
-        ErtsCodeInfo *ci_rw;
-        Export* ep;
-
-        /* Export entries are always writable, discard const. */
-        ci_rw = (ErtsCodeInfo *)fp[i].code_info;
-        ep = ErtsContainerStruct(ci_rw, Export, info);
-
-        if (ep->bif_number != -1) {
-            ep->is_bif_traced = !!on;
-        }
-
-        if (on && !flags.breakpoint) {
-            /* Turn on global call tracing */
-            if (!erts_is_export_trampoline_active(ep, code_ix)) {
-                fp[i].mod->curr.num_traced_exports++;
-#if defined(DEBUG) && !defined(BEAMASM)
-                ep->info.u.op = BeamOpCodeAddr(op_i_func_info_IaaI);
-#endif
-                ep->trampoline.breakpoint.op = BeamOpCodeAddr(op_i_generic_breakpoint);
-                ep->trampoline.breakpoint.address =
-                    (BeamInstr) ep->dispatch.addresses[code_ix];
-            }
-            erts_set_export_trace(ci_rw, match_prog_set);
-
-	} else if (!on && flags.breakpoint) {
-	    /* Turn off breakpoint tracing -- nothing to do here. */
-	} else {
-	    /*
-	     * Turn off global tracing, either explicitly or implicitly
-	     * before turning on breakpoint tracing.
-	     */
-            erts_clear_export_trace(ci_rw);
-	}
-    }
-
     /*
-    ** So, now for code breakpoint tracing
-    */
-    erts_bp_match_functions(&finish_bp.f, mfa, specified);
+     * First do "local" code breakpoint tracing
+     */
+    erts_bp_match_functions(&finish_bp.f, mfa, specified, 0);
 
     if (on) {
 	if (! flags.breakpoint) {
@@ -2737,6 +2696,49 @@ erts_set_trace_pattern(ErtsCodeMFA *mfa, int specified,
         if (flags.call_memory) {
 	    erts_clear_memory_break(&finish_bp.f);
 	}
+    }
+
+    /*
+     * Do export entries *after* module code, when breakpoints have been set
+     * and Export.is_bif_traced can be updated accordingly.
+     */
+    erts_bp_match_export(&finish_bp.e, mfa, specified);
+
+    fp = finish_bp.e.matching;
+    n = finish_bp.e.matched;
+
+    for (i = 0; i < n; i++) {
+        ErtsCodeInfo *ci_rw;
+        Export* ep;
+
+        /* Export entries are always writable, discard const. */
+        ci_rw = (ErtsCodeInfo *)fp[i].code_info;
+        ep = ErtsContainerStruct(ci_rw, Export, info);
+
+        if (on && !flags.breakpoint) {
+            /* Turn on global call tracing */
+            if (!erts_is_export_trampoline_active(ep, code_ix)) {
+                fp[i].mod->curr.num_traced_exports++;
+#if defined(DEBUG) && !defined(BEAMASM)
+                ep->info.u.op = BeamOpCodeAddr(op_i_func_info_IaaI);
+#endif
+                ep->trampoline.breakpoint.op = BeamOpCodeAddr(op_i_generic_breakpoint);
+                ep->trampoline.breakpoint.address =
+                    (BeamInstr) ep->dispatch.addresses[code_ix];
+            }
+            erts_set_export_trace(ep, match_prog_set);
+
+        } else if (!on && flags.breakpoint) {
+            /* Turn off breakpoint tracing -- nothing to do here. */
+        } else {
+            /*
+             * Turn off global tracing, either explicitly or implicitly
+             * before turning on breakpoint tracing.
+             */
+            erts_clear_export_trace(ci_rw);
+        }
+
+        ep->is_bif_traced = erts_export_is_bif_traced(ep);
     }
 
     finish_bp.current = 0;
@@ -2778,22 +2780,17 @@ prepare_clear_all_trace_pattern(ErtsTraceSession* session)
 
     for (i = 0; i < n; i++) {
         ErtsCodeInfo *ci_rw;
-        Export* ep;
 
         /* Export entries are always writable, discard const. */
         ci_rw = (ErtsCodeInfo *)fp[i].code_info;
-        ep = ErtsContainerStruct(ci_rw, Export, info);
 
-        if (ep->bif_number != -1) {
-            ep->is_bif_traced = 0; // ToDo: multi sessions?
-        }
         erts_clear_export_trace(ci_rw);
     }
 
     /*
      * Clear all breakpoints in code for session
      */
-    erts_bp_match_functions(&finish_bp.f, NULL, 0);
+    erts_bp_match_functions(&finish_bp.f, NULL, 0, 0);
     erts_clear_all_breaks(&finish_bp.f);
 
     clear_event_trace(erts_staging_trace_session->send_tracing);
@@ -2951,8 +2948,7 @@ erts_finish_breakpointing(void)
 	 * deallocate the GenericBp structs for them.
 	 */
 	clean_export_entries(&finish_bp.e);
-	erts_consolidate_export_bp_data(&finish_bp.e);
-	erts_consolidate_local_bp_data(&finish_bp.f);
+        erts_consolidate_all_bp_data(&finish_bp.f, &finish_bp.e);
 	erts_bp_free_matched_functions(&finish_bp.e);
 	erts_bp_free_matched_functions(&finish_bp.f);
         consolidate_event_tracing(erts_staging_trace_session->send_tracing);
