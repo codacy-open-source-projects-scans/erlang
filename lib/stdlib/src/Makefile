@@ -56,6 +56,7 @@ MODULES= \
 	dets_utils \
 	dets_v9 \
 	dict \
+	graph \
 	digraph \
 	digraph_utils \
 	edlin \
@@ -176,7 +177,7 @@ endif
 # FLAGS
 # ----------------------------------------------------
 
-ERL_COMPILE_FLAGS += -Werror  +warn_deprecated_catch
+ERL_COMPILE_FLAGS += -Werror  +warn_deprecated_catch +warn_obsolete_bool_op
 ERL_COMPILE_FLAGS += -I../include -I../../kernel/include
 
 ifeq ($(ERL_DETERMINISTIC),yes)
@@ -208,6 +209,7 @@ primary_bootstrap_compiler: \
   $(BOOTSTRAP_COMPILER)/ebin/erl_scan.beam \
   $(BOOTSTRAP_COMPILER)/ebin/erl_parse.beam \
   $(BOOTSTRAP_COMPILER)/ebin/erl_lint.beam \
+  $(BOOTSTRAP_COMPILER)/ebin/graph.beam \
   $(BOOTSTRAP_COMPILER)/ebin/io.beam \
   $(BOOTSTRAP_COMPILER)/ebin/otp_internal.beam \
   $(BOOTSTRAP_COMPILER)/ebin/erl_internal.beam

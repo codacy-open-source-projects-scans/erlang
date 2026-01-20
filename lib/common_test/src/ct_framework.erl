@@ -36,6 +36,8 @@
 -export([error_in_suite/1, init_per_suite/1, end_per_suite/1,
 	 init_per_group/2, end_per_group/2]).
 
+-compile(nowarn_obsolete_bool_op).
+
 -include("ct.hrl").
 -include("ct_event.hrl").
 -include("ct_util.hrl").
@@ -941,13 +943,22 @@ error_notification(Mod,Func,_Args,{Error,Loc}) ->
 	      end,
     ErrorStr = case ErrorSpec of
 		 {badmatch,Descr} ->
-                     Descr1 = io_lib:format("~tP",[Descr,10]),
+                     Descr1 = io_lib:format("~0tP",[Descr,10]),
                      DescrLength = string:length(Descr1),
                      if DescrLength > 50 ->
 			     Descr2 = string:slice(Descr1,0,50),
 			     io_lib:format("{badmatch,~ts...}",[Descr2]);
 			true ->
 			     io_lib:format("{badmatch,~ts}",[Descr1])
+		     end;
+		 {'EXIT',Descr} ->
+                     Descr1 = io_lib:format("~0tP",[Descr,10]),
+                     DescrLength = string:length(Descr1),
+                     if DescrLength > 50 ->
+			     Descr2 = string:slice(Descr1,0,50),
+			     io_lib:format("{'EXIT',~ts...}",[Descr2]);
+			true ->
+			     io_lib:format("{'EXIT',~ts}",[Descr1])
 		     end;
 		 {test_case_failed,Reason} ->
 		     case (catch io_lib:format("{test_case_failed,~ts}", [Reason])) of
@@ -1013,17 +1024,21 @@ error_notification(Mod,Func,_Args,{Error,Loc}) ->
 	%% if a function specified by all/0 does not exist, we
 	%% pick up undef here
 	[{LastMod,LastFunc}|_] when ErrorStr == "undef" ->
-	    PrintError("~w:~tw could not be executed~nReason: ~ts",
-		     [LastMod,LastFunc,ErrorStr]);
+	    LastSource = error_notification_source_info(LastMod),
+	    PrintError("~w:~tw at ~ts could not be executed~nReason: ~ts",
+		     [LastMod,LastFunc,LastSource,ErrorStr]);
 
 	[{LastMod,LastFunc}|_] ->
-	    PrintError("~w:~tw failed~nReason: ~ts", [LastMod,LastFunc,ErrorStr]);
+	    LastSource = error_notification_source_info(LastMod),
+	    PrintError("~w:~tw at ~ts failed~nReason: ~ts",
+		     [LastMod,LastFunc,LastSource,ErrorStr]);
 	    
 	[{LastMod,LastFunc,LastLine}|_] ->
 	    %% print error to console, we are only
 	    %% interested in the last executed expression
-	    PrintError("~w:~tw failed on line ~w~nReason: ~ts",
-		     [LastMod,LastFunc,LastLine,ErrorStr]),
+	    LastSource = error_notification_source_info(LastMod),
+	    PrintError("~w:~tw at ~ts:~w failed~nReason: ~ts",
+		     [LastMod,LastFunc,LastSource,LastLine,ErrorStr]),
 	    
 	    case ct_util:read_suite_data({seq,Mod,Func}) of
 		undefined ->
@@ -1034,6 +1049,16 @@ error_notification(Mod,Func,_Args,{Error,Loc}) ->
 	    end	    
     end,
     ok.
+
+error_notification_source_info(Mod) ->
+    maybe
+	{Mod, Beam, _} ?= code:get_object_code(Mod),
+	{ok, {Mod, [{abstract_code, {_, Forms}}]}} ?= beam_lib:chunks(Beam, [abstract_code]),
+	[{attribute, _, file, {File, _}}|_] ?= Forms,
+	File
+    else
+	_ -> atom_to_list(Mod) ++ ".erl"
+    end.
 
 %% cases in seq that have already run
 mark_as_failed(Seq,Mod,Func,[Func|TCs]) ->

@@ -212,7 +212,7 @@ module(Forms0, Opts) ->
 	  end,
     Cexp = [#c_var{name=FA} || {_,_}=FA <:- Exp],
     Kfs1 = reverse(Kfs0),
-    Kfs = if LoadNif and (Nifs =:= none) ->
+    Kfs = if LoadNif, Nifs =:= none ->
                   insert_nif_start(Kfs1);
              true ->
                   Kfs1
@@ -225,7 +225,7 @@ form({function,_,_,_,_}=F0,
      #imodule{defs=Defs,load_nif=LoadNif0}=Module,
      Opts) ->
     {F,Ws,LoadNif} = function(F0, Module, Opts),
-    Module#imodule{defs=[F|Defs],ws=Ws,load_nif=LoadNif or LoadNif0};
+    Module#imodule{defs=[F|Defs],ws=Ws,load_nif=LoadNif orelse LoadNif0};
 form({attribute,_,module,Mod}, Module, _Opts) ->
     true = is_atom(Mod),
     Module#imodule{name=Mod};
@@ -2090,6 +2090,7 @@ get_nomatch_total(NomatchModes) ->
             end
         end.
 
+is_generator({match,_,_,_}) -> true;
 is_generator({generate,_,_,_}) -> true;
 is_generator({generate_strict,_,_,_}) -> true;
 is_generator({b_generate,_,_,_}) -> true;
@@ -2189,6 +2190,8 @@ get_qual_anno(Abstract) -> element(2, Abstract).
 %% generator(Line, Generator, Guard, State) -> {Generator',State}.
 %%  Transform a given generator into its #igen{} representation.
 
+generator(Line, {match,L,P,E}, Gs, StrictPats, St0) ->
+    generator(Line, {generate_strict,L,P,{cons,L,E,{nil,L}}}, Gs, StrictPats, St0);
 generator(Line, {Generate,Lg,P0,E}, Gs, StrictPats, St0)
   when Generate =:= generate;
        Generate =:= generate_strict ->

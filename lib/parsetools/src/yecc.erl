@@ -487,6 +487,8 @@ lib/parsetools/include/yeccpre.hrl
 * Kernighan & Pike: The UNIX programming environment, 1984.
 """.
 
+-compile(nowarn_obsolete_bool_op).
+
 -export([compile/3, file/1, file/2, format_error/1]).
 
 -export_type([option/0, yecc_ret/0]).
@@ -498,8 +500,6 @@ lib/parsetools/include/yeccpre.hrl
                 flatmap/2, foldl/3, foldr/3, foreach/2, keydelete/3,
                 keysort/2, last/1, map/2, member/2, reverse/1,
                 sort/1, usort/1]).
-
--compile(nowarn_export_var_subexpr).
 
 -include("erl_compile.hrl").
 -include("ms_transform.hrl").
@@ -2417,7 +2417,8 @@ select_parts(PartDataL) ->
             NL = [D#part_data{states = NewS} || 
                      {W1, #part_data{states = S0}=D} <- Ws,
                      W1 > 0,
-                     (NewS = ordsets:subtract(S0, S)) =/= []],
+                     NewS <- [ordsets:subtract(S0, S)],
+                     NewS =/= []],
             if 
                 length(S) =:= 1; NActions =:= 1 ->
                     select_parts(NL);

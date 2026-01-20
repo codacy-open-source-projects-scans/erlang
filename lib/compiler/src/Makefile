@@ -56,7 +56,6 @@ MODULES =  \
 	beam_core_to_ssa \
 	beam_clean \
 	beam_dict \
-	beam_digraph \
 	beam_disasm \
 	beam_doc \
 	beam_flatten \
@@ -140,7 +139,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # FLAGS
 # ----------------------------------------------------
 
-ERL_COMPILE_FLAGS += -Werror +warn_deprecated_catch
+ERL_COMPILE_FLAGS += -Werror +warn_deprecated_catch +warn_obsolete_bool_op
 ERL_COMPILE_FLAGS += +inline +warn_unused_import \
  -I../../stdlib/include -I$(EGEN) -W +warn_missing_spec
 

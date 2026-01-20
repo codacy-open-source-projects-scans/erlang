@@ -70,8 +70,6 @@ Module:format_error(ErrorDescriptor)
 `m:epp`, `m:erl_parse`
 """.
 
--compile(nowarn_export_var_subexpr).
-
 -export([module/1,module/2,module/3,format_error/1]).
 -export([exprs/2,exprs_opt/3,used_vars/2]). % Used from erl_eval.erl.
 -export([is_pattern_expr/1,is_guard_test/1,is_guard_test/2,is_guard_test/3]).
@@ -87,6 +85,8 @@ Module:format_error(ErrorDescriptor)
                 foldl/3,foldr/3,
                 map/2,mapfoldl/3,member/2,
                 reverse/1]).
+
+-compile(nowarn_obsolete_bool_op).
 
 %% Removed functions
 
@@ -368,11 +368,28 @@ format_error_1({redefine_bif_import,{F,A}}) ->
       import directive overrides auto-imported BIF ~w/~w --
       use "-compile({no_auto_import,[~w/~w]})." to resolve name clash
       """, [F,A,F,A]};
-format_error_1({deprecated, MFA, String, Rel}) ->
+format_error_1({obsolete_bool_op, OldOp, NewOp}) ->
+    String =
+        ("use the short circuiting " ++ NewOp ++ " instead.\nThe "
+         ++ OldOp ++ " "
+         ++ ~"""
+         operator, which always evaluates both sides, could be
+         removed in a future version of Erlang/OTP.
+         Note that the 'and' and 'or' operators have unexpected precedence, so
+         that e.g. `X > 3 or is_tuple(X)` parses as `X > (3 or is_tuple(X))`.
+         Compile directive 'nowarn_obsolete_bool_op' can be used to suppress
+         warnings in selected modules.
+         """),
+    format_error_1({deprecated, OldOp, String});
+format_error_1({deprecated, MFA, String, Rel}) when is_tuple(MFA) ->
+     format_error_1({deprecated, format_mfa(MFA), String, Rel});
+format_error_1({deprecated, Thing, String, Rel}) when is_list(String) ->
     {~"~s is deprecated and will be removed in ~s; ~s",
-     [format_mfa(MFA), Rel, String]};
-format_error_1({deprecated, MFA, String}) when is_list(String) ->
-    {~"~s is deprecated; ~s", [format_mfa(MFA), String]};
+     [Thing, Rel, String]};
+format_error_1({deprecated, MFA, String}) when is_tuple(MFA) ->
+    format_error_1({deprecated, format_mfa(MFA), String});
+format_error_1({deprecated, Thing, String}) when is_list(String) ->
+    {~"~s is deprecated; ~s", [Thing, String]};
 format_error_1({deprecated_type, {M1, F1, A1}, String, Rel}) ->
     {~"the type ~p:~p~s is deprecated and will be removed in ~s; ~s",
                   [M1, F1, gen_type_paren(A1), Rel, String]};
@@ -410,6 +427,13 @@ format_error_1(update_literal) ->
     ~"expression updates a literal";
 format_error_1(illegal_zip_generator) ->
     ~"only generators are allowed in a zip generator.";
+format_error_1(compr_assign) ->
+    ~"""
+     matches using '=' are not allowed in comprehension qualifiers
+     unless the experimental 'compr_assign' language feature is enabled.
+     With 'compr_assign' enabled, a match 'P = E' will behave as a
+     strict generator 'P <-:- [E]'."
+     """;
 %% --- patterns and guards ---
 format_error_1(illegal_map_assoc_in_pattern) -> ~"illegal pattern, did you mean to use `:=`?";
 format_error_1(illegal_pattern) -> ~"illegal pattern";
@@ -781,6 +805,10 @@ start(File, Opts) ->
 		false ->
 		    undefined
 	    end,
+    %% note: `-feature declarations are collected and stripped by epp,
+    %% and the compiler presents the total set of enabled features as
+    %% the option `{features, ...}` to erl_lint and other passes; they
+    %% do not change after the epp pass
     #lint{state = start,
           exports = gb_sets:from_list([{module_info,0},{module_info,1}]),
           compile = Opts,
@@ -848,6 +876,7 @@ bool_options() ->
      {deprecated_callback,true},
      {deprecated_catch,false},
      {obsolete_guard,true},
+     {obsolete_bool_op,false},
      {untyped_record,false},
      {missing_spec,false},
      {missing_spec_documented,false},
@@ -2521,13 +2550,22 @@ gexpr({op,_Anno,EqOp,L,R}, Vt, St0) when EqOp =:= '=:='; EqOp =:= '=/=' ->
 gexpr({op,Anno,Op,L,R}, Vt, St0) ->
     {Avt,St1} = gexpr_list([L,R], Vt, St0),
     case is_gexpr_op(Op, 2) of
-        true -> {Avt,St1};
+        true -> {Avt,warn_obsolete_op(Op, 2, Anno, St1)};
         false -> {Avt,add_error(Anno, illegal_guard_expr, St1)}
     end;
 %% Everything else is illegal! You could put explicit tests here to
 %% better error diagnostics.
 gexpr(E, _Vt, St) ->
     {[],add_error(element(2, E), illegal_guard_expr, St)}.
+
+warn_obsolete_op(Op, A, Anno, St) ->
+    case {Op, A} of
+        {'and', 2} ->
+	    maybe_add_warning(Anno, {obsolete_bool_op, "'and'", "'andalso'"}, St);
+        {'or', 2} ->
+	    maybe_add_warning(Anno, {obsolete_bool_op, "'or'", "'orelse'"}, St);
+        _ -> St
+    end.
 
 %% gexpr_list(Expressions, VarTable, State) ->
 %%      {UsedVarTable,State'}
@@ -2924,7 +2962,8 @@ expr({op,Anno,EqOp,L,R}, Vt, St0) when EqOp =:= '=:='; EqOp =:= '=/=' ->
     St = expr_check_match_zero(R, expr_check_match_zero(L, St0)),
     vtupd_export_expr_list({EqOp, Anno}, [L, R], Vt, St); %They see the same variables
 expr({op,Anno,Op,L,R}, Vt, St) ->
-    vtupd_export_expr_list({Op, Anno}, [L, R], Vt, St); %They see the same variables
+    St1 = warn_obsolete_op(Op, 2, Anno, St),
+    vtupd_export_expr_list({Op, Anno}, [L, R], Vt, St1); %They see the same variables
 %% The following are not allowed to occur anywhere!
 expr({remote,_Anno,M,_F}, _Vt, St) ->
     {[],add_error(erl_parse:first_anno(M), illegal_expr, St)};
@@ -3806,8 +3845,8 @@ add_missing_spec_warnings(Forms, St0, Type) ->
     Warns = %% functions + line numbers for which we should warn
 	case Type of
 	    all ->
-		[{FA,Anno} || {function,Anno,F,A,_} <- Forms,
-			   not lists:member(FA = {F,A}, Specs)];
+		[{{F,A},Anno} || {function,Anno,F,A,_} <- Forms,
+                                 not lists:member({F,A}, Specs)];
 	    _ ->
                 Exps0 = gb_sets:to_list(exports(St0)) -- pseudolocals(),
                 Exps1 =
@@ -3817,8 +3856,8 @@ add_missing_spec_warnings(Forms, St0, Type) ->
                             Exps0
                     end,
                 Exps = Exps1 -- Specs,
-		[{FA,Anno} || {function,Anno,F,A,_} <- Forms,
-			   member(FA = {F,A}, Exps)]
+		[{{F,A},Anno} || {function,Anno,F,A,_} <- Forms,
+                                 member({F,A}, Exps)]
 	end,
     foldl(fun ({FA,Anno}, St) ->
 		  add_warning(Anno, {missing_spec,FA}, St)
@@ -4143,11 +4182,22 @@ lc_quals([F|Qs], Vt, Uvt, St0) ->
     Info = is_guard_test2_info(St0),
     {Fvt,St1} = case is_guard_test2(F, Info) of
 		    true -> guard_test(F, Vt, St0);
-		    false -> expr(F, Vt, St0)
+		    false -> expr(F, Vt, check_compr_assign(F, St0))
 		end,
     lc_quals(Qs, vtupdate(Fvt, Vt), Uvt, St1);
 lc_quals([], Vt, Uvt, St) ->
     {Vt, Uvt, St}.
+
+check_compr_assign({match,Anno,_,_}, St) ->
+    case is_feature_enabled(compr_assign, St) of
+        true -> St;
+        false -> add_error(Anno, compr_assign, St)
+    end;
+check_compr_assign(_, St) ->
+    St.
+
+is_feature_enabled(Name, St) ->
+    lists:member(Name, St#lint.features).
 
 is_guard_test2_info(#lint{records=RDs,locals=Locals,imports=Imports}) ->
     {RDs,fun(FA) ->
