@@ -278,6 +278,10 @@ obsolete(public_key, encrypt_public, 2) ->
     {unsafe, undefined};
 obsolete(public_key, encrypt_public, 3) ->
     {unsafe, possibly};
+obsolete(xmerl_sax_parser, file, 2) ->
+    {unsafe, possibly};
+obsolete(xmerl_sax_parser, stream, 2) ->
+    {unsafe, possibly};
 obsolete(auth, node_cookie, _) ->
     {deprecated, "use erlang:set_cookie/2 and net_adm:ping/1 instead"};
 obsolete(asn1ct, decode, _) ->
@@ -307,7 +311,9 @@ obsolete(file, consult, _) ->
 obsolete(file, path_consult, _) ->
     {unsafe, possibly};
 obsolete(os, cmd, _) ->
-    {unsafe, "use open_port/2 with {spawn_executable, _} argument"};
+    {unsafe, possibly};
+obsolete(socket, open, _) ->
+    {unsafe, possibly};
 obsolete(ct_ftp, _, _) ->
     {deprecated, "Legacy protocol support will be dropped in OTP-30", "OTP 30"};
 obsolete(ct_slave, _, _) ->
@@ -316,6 +322,10 @@ obsolete(ftp, _, _) ->
     {deprecated, "Legacy protocol support will be dropped in OTP-30, use more modern approach for file transfer as for instance SFTP (SSH File Transfer Protocol).", "OTP 30"};
 obsolete(gen_fsm, _, _) ->
     {deprecated, "use the 'gen_statem' module instead"};
+obsolete(mod_actions, _, _) ->
+    {deprecated, "use 'mod_esi' for dynamic page generation", "OTP 30"};
+obsolete(mod_cgi, _, _) ->
+    {deprecated, "use 'mod_esi' for dynamic page generation", "OTP 30"};
 obsolete(odbc, _, _) ->
     {deprecated, "Legacy protocol support will be dropped in OTP-30, does not really provide backend transparency and known usage is low.", "OTP 30"};
 obsolete(random, _, _) ->
@@ -331,7 +341,7 @@ obsolete(pg2, _, _) ->
 obsolete(http_uri, _, _) ->
     {unsafe, "use uri_string instead"};
 obsolete(xmerl_scan, _, _) ->
-    {unsafe, "this module cannot be used with untrusted input, use xmerl_sax_parser instead"};
+    {unsafe, possibly};
 obsolete(_,_,_) -> no.
 
 -dialyzer({no_match, obsolete_type/3}).
