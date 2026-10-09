@@ -325,6 +325,7 @@ gen_header(Fd) ->
 -define(IS_CP(CP), is_integer(CP, 0, 16#10FFFF)).
 -define(IS_ASCII(CP), is_integer(CP, 0, 127)).
 -define(IS_LATIN1(CP), is_integer(CP, 0, 255)).
+-define(IS_HANGUL(CP), is_integer(CP, 16#AC00, 16#D7A3)).
 
 
 """),
@@ -469,7 +470,7 @@ gen_norm(Fd) ->
                 ),
 
     io:put_chars(Fd,
-                 "decompose(CP) when is_integer(CP), CP < 16#AC00, 16#D7A3 > CP ->\n"
+                 "decompose(CP) when is_integer(CP), not ?IS_HANGUL(CP) ->\n"
                  "    case unicode_table(CP) of\n"
                  "        {_,[],_,_} -> CP;\n"
                  "        {_,CPs,_,_} -> canonical_order(CPs)\n"
@@ -477,7 +478,7 @@ gen_norm(Fd) ->
                  "decompose(CP) ->\n"
                  "   canonical_order(decompose_1(CP)).\n"
                  "\n"
-                 "decompose_1(CP) when is_integer(CP, 16#AC00, 16#D7A3) ->\n"
+                 "decompose_1(CP) when ?IS_HANGUL(CP) ->\n"
                  "    Syll = CP-16#AC00,\n"
                  "    T = 28,\n"
                  "    N = 588,\n"
@@ -512,7 +513,7 @@ gen_norm(Fd) ->
                  "     [CP || {_, CP} <- lists:keysort(1,lists:reverse(Seq))] ++ canonical_order_1(Cont).\n\n"),
 
     io:put_chars(Fd,
-                 "decompose_compat(CP) when is_integer(CP), CP < 16#AC00, 16#D7A3 > CP ->\n"
+                 "decompose_compat(CP) when is_integer(CP), not ?IS_HANGUL(CP) ->\n"
                  "    case unicode_table(CP) of\n"
                  "        {_, [], [], _} -> CP;\n"
                  "        {_, _, {_,CPs}, _} -> canonical_order(CPs);\n"
@@ -521,7 +522,7 @@ gen_norm(Fd) ->
                  "decompose_compat(CP) ->\n"
                  "   canonical_order(decompose_compat_1(CP)).\n"
                  "\n"
-                 "decompose_compat_1(CP) when is_integer(CP, 16#AC00, 16#D7A3) ->\n"
+                 "decompose_compat_1(CP) when ?IS_HANGUL(CP) ->\n"
                  "    Syll = CP-16#AC00,\n"
                  "    T = 28,\n"
                  "    N = 588,\n"
@@ -791,10 +792,10 @@ gen_gc(Fd, GBP) ->
     io:put_chars(Fd,
                  "gc([]=R) -> R;\n"
                  "gc([CP]=R) when ?IS_CP(CP) -> R;\n"
-                 "gc([$\\r=CP|R0]) ->\n"
+                 "gc([$\\r=CP|R0] = Str) ->\n"
                  "    case cp(R0) of % Don't break CRLF\n"
                  "        [$\\n|R1] -> [[$\\r,$\\n]|R1];\n"
-                 "        T -> [CP|T]\n"
+                 "        _ -> Str  % Keep the tail binary\n"
                  "    end;\n"
                  "gc([CP1|T1]=T) when ?IS_LATIN1(CP1) ->\n"
                  "    case T1 of\n"

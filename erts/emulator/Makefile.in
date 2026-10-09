@@ -23,7 +23,6 @@
 include $(ERL_TOP)/make/target.mk
 include ../vsn.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
--include $(TARGET)/gen_git_version.mk
 
 ENABLE_ALLOC_TYPE_VARS = @ENABLE_ALLOC_TYPE_VARS@
 JIT_ENABLED=@JIT_ENABLED@
@@ -33,6 +32,14 @@ DTRACE_ENABLED_2STEP=@DTRACE_ENABLED_2STEP@
 USE_VM_PROBES=@USE_VM_PROBES@
 LIBS = @LIBS@
 LIBZSTD=@LIBZSTD@
+SSL_LIBDIR = @SSL_LIBDIR@
+SSL_INCLUDE = @SSL_INCLUDE@
+SSL_CRYPTO_LIBNAME = @SSL_CRYPTO_LIBNAME@
+SSL_SSL_LIBNAME = @SSL_SSL_LIBNAME@
+INCLUDES = $(SSL_INCLUDE)
+SSL_EXTRA_LIBS=@SSL_EXTRA_LIBS@
+ENCRYPTED_CRASH_DUMPS=@ENCRYPTED_CRASH_DUMPS@
+
 Z_LIB=@Z_LIB@
 CROSS_COMPILING = @CROSS_COMPILING@
 NO_INLINE_FUNCTIONS=false
@@ -413,6 +420,15 @@ LIBS    += $(ZSTD_LIB)
 endif
 endif
 
+ifeq ($(ENCRYPTED_CRASH_DUMPS),yes)
+SSL_DYNAMIC_ONLY=@SSL_DYNAMIC_ONLY@
+ifeq ($(SSL_DYNAMIC_ONLY),yes)
+SSL_DED_LD_RUNTIME_LIBRARY_PATH = @SSL_DED_LD_RUNTIME_LIBRARY_PATH@
+LIBS    += $(SSL_DED_LD_RUNTIME_LIBRARY_PATH)
+endif
+LIBS    += -L$(SSL_LIBDIR) -l$(SSL_CRYPTO_LIBNAME) -l@SSL_SSL_LIBNAME@ $(SSL_EXTRA_LIBS)
+endif
+
 LIBSCTP = @LIBSCTP@
 
 ORG_THR_LIBS=@EMU_THR_LIBS@
@@ -639,7 +655,6 @@ $(TTF_DIR)/beam_opcodes.h \
 $(TTF_DIR)/OPCODES-GENERATED: $(OPCODE_TABLES) utils/beam_makeops
 	$(gen_verbose)LANG=C $(PERL) utils/beam_makeops \
 		-wordsize @EXTERNAL_WORD_SIZE@ \
-		-code-model @CODE_MODEL@ \
 		-outdir $(TTF_DIR) \
 		-jit $(if $(filter jit,$(FLAVOR)),yes,no) \
 		-DUSE_VM_PROBES=$(if $(USE_VM_PROBES),1,0) \
@@ -680,11 +695,13 @@ $(TARGET)/erl_version.h: ../vsn.mk $(ERL_TOP)/make/$(TARGET)/otp.mk utils/make_v
 	$(gen_verbose)LANG=C $(PERL) utils/make_version -o $@ $(SYSTEM_VSN) $(OTP_VERSION) $(VSN)$(SERIALNO) $(TARGET)
 GENERATE += $(TARGET)/erl_version.h
 
+# git version include file
+TMPVAR := $(shell utils/gen_git_version $(TARGET)/erl_git_version.h)
+
 # driver table
 $(TTF_DIR)/driver_tab.c: Makefile.in utils/make_driver_tab
 	$(gen_verbose)LANG=C $(PERL) utils/make_driver_tab -o $@ -nifs $(NIF_OBJS) $(STATIC_NIF_SYMBOLS) -drivers $(DRV_OBJS) $(STATIC_DRIVER_LIBS)
 GENERATE += $(TTF_DIR)/driver_tab.c
-
 
 
 ifeq ($(TYPE)@EXTERNAL_WORD_SIZE@,debug64)
@@ -857,6 +874,10 @@ ifeq ($(ERTS_USE_BUILTIN_RYU),yes)
 COMMON_INCLUDES += -Iryu
 endif
 COMMON_INCLUDES += -Ipcre
+ifeq ($(ENCRYPTED_CRASH_DUMPS),yes)
+COMMON_INCLUDES += $(SSL_INCLUDE)
+CFLAGS += -DENCRYPTED_CRASH_DUMPS=1
+endif
 COMMON_INCLUDES += -I../include -I../include/$(TARGET)
 COMMON_INCLUDES += -I../include/internal -I../include/internal/$(TARGET)
 
@@ -1206,7 +1227,9 @@ RUN_OBJS += \
 	$(OBJDIR)/erl_iolist.o \
 	$(OBJDIR)/erl_etp.o \
 	$(OBJDIR)/erl_internal_test.o \
-	$(OBJDIR)/erl_record.o
+	$(OBJDIR)/erl_record.o \
+	$(OBJDIR)/erl_crash_dump.o
+
 
 LTTNG_OBJS = $(OBJDIR)/erlang_lttng.o
 
@@ -1466,12 +1489,6 @@ endif
 .PHONY: check_emu_registers
 check_emu_registers: $(OBJDIR)/beam_emu$(PROFILE_MARKER).S
 	utils/beam_emu_vars -vars 'c_p E HTOP FCALLS I reg' $^
-
-.PHONY: $(TARGET)/gen_git_version.mk
-$(TARGET)/gen_git_version.mk:
-# We touch beam/erl_bif.info.c if we regenerated the git version to force a
-# rebuild.
-	$(V_at)if utils/gen_git_version $@; then touch beam/erl_bif_info.c; fi
 
 DEPEND_DEPS=jit src drv nif sys target zlib zstd
 ifeq ($(ERTS_USE_BUILTIN_RYU),yes)

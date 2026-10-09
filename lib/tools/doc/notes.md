@@ -3,7 +3,7 @@
 
 SPDX-License-Identifier: Apache-2.0
 
-Copyright Ericsson AB 2023-2025. All Rights Reserved.
+Copyright Ericsson AB 2023-2026. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,6 +22,106 @@ limitations under the License.
 # Tools Release Notes
 
 This document describes the changes made to the Tools application.
+
+## Tools 4.2.3
+
+### Fixed Bugs and Malfunctions
+
+- The `tags.erl` module is used to generate `TAGS` files for Emacs. There was a case where single quote items starting in position 0 would crash the scanner. This use case can potentially happen in docstrings, although not too common. This fix makes the scanner to handle such cases instead of crashing.
+
+  Own Id: OTP-20293 Aux Id: [PR-11447]
+
+- Updated the Emacs skeleton to reflect latest `format_status` callback handling.
+
+  Own Id: OTP-20339 Aux Id: [PR-11507]
+
+[PR-11447]: https://github.com/erlang/otp/pull/11447
+[PR-11507]: https://github.com/erlang/otp/pull/11507
+
+## Tools 4.2.2
+
+### Fixed Bugs and Malfunctions
+
+- tools: fixes tprof not stopping tracing
+  
+  A call to `tprof:enable_trace(new|existing)` starts tracing processes.
+  To stop it, one calls `tprof:disable_trace(new|existing)`. However, the guard to stop tracing was matching on `new_processes | existing_processes`. The return happens to say `0` processes are traced now, but the tracing did not stop. This issue has been fixed.
+
+  Own Id: OTP-20302 Aux Id: [PR-11481]
+
+[PR-11481]: https://github.com/erlang/otp/pull/11481
+
+## Tools 4.2.1
+
+### Fixed Bugs and Malfunctions
+
+- Xref could crash instead of returning an appropriate error tuple when asked to open a BEAM file without debug information but with a `moduledoc(false)` attribute.
+
+  Own Id: OTP-20163 Aux Id: [GH-11152], [PR-11168]
+
+[GH-11152]: https://github.com/erlang/otp/issues/11152
+[PR-11168]: https://github.com/erlang/otp/pull/11168
+
+## Tools 4.2
+
+### Fixed Bugs and Malfunctions
+
+- Fixed "unbalanced parenthesis" issue when pressing TAB in emacs erlang shell.
+
+  Own Id: OTP-19921 Aux Id: [PR-10642], [GH-8569]
+
+- The minimum supported Emacs version for `erlang-mode` has been raised
+  from 24.3 to 27.1. Compatibility shims for older Emacs versions have
+  been removed.
+  
+  The `erlang-mode` package version now tracks the Erlang/OTP release
+  version (29.0) for consistent version numbers across package managers.
+
+  Own Id: OTP-20059 Aux Id: [PR-10892]
+
+[PR-10642]: https://github.com/erlang/otp/pull/10642
+[GH-8569]: https://github.com/erlang/otp/issues/8569
+[PR-10892]: https://github.com/erlang/otp/pull/10892
+
+### Improvements and New Features
+
+- Tools such as the debugger, `m:beam_lib`, and `m:xref` no longer support BEAM files created before OTP 13B.
+
+  Own Id: OTP-19906 Aux Id: [PR-10519]
+
+- The `ignore_xref` attribute has been handled as a post-analysis filter by build tools such as Rebar3. In this release, `m:xref` itself does the filtering, ensuring that all tooling that calls `xref` for any purpose can rely on these declarations to just work.
+
+  Own Id: OTP-20032 Aux Id: [PR-10592]
+
+- Added support for `-unsafe` attributes, which is used to mark functions as unsafe to use. 
+  
+  This is similar to but separate from deprecation, and the compiler will by default now generate warnings for calls to functions in Erlang/OTP that are known to be always unsafe.
+  
+  Furthermore, `m:xref` can now be used to find calls to functions in another application that lack a `-doc` attribute (`undocumented_function_calls`), calls to functions in another application marked `-doc false.` (`private_function_calls`), as well as calls to unsafe functions (`unsafe_function_calls`).
+
+  Own Id: OTP-20066 Aux Id: [PR-10839]
+
+- The runtime system now supports generating encrypted crash dumps. See the description of `--enable-encrypted-crash-dumps` in [Building and Installing Erlang/OTP](https://www.erlang.org/doc/system/install.html).
+
+  Own Id: OTP-20085 Aux Id: [PR-10993]
+
+[PR-10519]: https://github.com/erlang/otp/pull/10519
+[PR-10592]: https://github.com/erlang/otp/pull/10592
+[PR-10839]: https://github.com/erlang/otp/pull/10839
+[PR-10993]: https://github.com/erlang/otp/pull/10993
+
+## Tools 4.1.4.1
+
+### Fixed Bugs and Malfunctions
+
+- tools: fixes tprof not stopping tracing
+  
+  A call to `tprof:enable_trace(new|existing)` starts tracing processes.
+  To stop it, one calls `tprof:disable_trace(new|existing)`. However, the guard to stop tracing was matching on `new_processes | existing_processes`. The return happens to say `0` processes are traced now, but the tracing did not stop. This issue has been fixed.
+
+  Own Id: OTP-20302 Aux Id: [PR-11481]
+
+[PR-11481]: https://github.com/erlang/otp/pull/11481
 
 ## Tools 4.1.4
 
@@ -102,6 +202,19 @@ This document describes the changes made to the Tools application.
   Own Id: OTP-19575 Aux Id: [PR-9670]
 
 [PR-9670]: https://github.com/erlang/otp/pull/9670
+
+## Tools 4.1.1.1
+
+### Fixed Bugs and Malfunctions
+
+- tools: fixes tprof not stopping tracing
+  
+  A call to `tprof:enable_trace(new|existing)` starts tracing processes.
+  To stop it, one calls `tprof:disable_trace(new|existing)`. However, the guard to stop tracing was matching on `new_processes | existing_processes`. The return happens to say `0` processes are traced now, but the tracing did not stop. This issue has been fixed.
+
+  Own Id: OTP-20302 Aux Id: [PR-11481]
+
+[PR-11481]: https://github.com/erlang/otp/pull/11481
 
 ## Tools 4.1.1
 

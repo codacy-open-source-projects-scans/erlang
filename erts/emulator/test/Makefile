@@ -146,6 +146,7 @@ MODULES= \
 	erts_test_destructor \
 	crypto_reference \
 	literal_area_collector_test \
+        erts_test_sync_tracer \
         ext_records
 
 NO_OPT= bs_bincomp \
@@ -178,6 +179,8 @@ STDLIB_MODULES=error_info_lib
 
 ERL_FILES= $(MODULES:%=%.erl) \
 	$(STDLIB_MODULES:%=$(ERL_TOP)/lib/stdlib/test/%.erl)
+
+HRL_FILES= erts_test_utils.hrl
 
 TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
@@ -239,9 +242,6 @@ targets: $(TARGET_FILES)
 %_no_opt_SUITE.erl: %_SUITE.erl
 	sed -e 's;-module($(basename $<));-module($(basename $@));' $< > $@
 
-%_r26_SUITE.erl: %_SUITE.erl
-	sed -e 's;-module($(basename $<));-module($(basename $@));' $< > $@
-
 %_stripped_types_SUITE.erl: %_SUITE.erl
 	sed -e 's;-module($(basename $<));-module($(basename $@));' $< > $@
 
@@ -256,6 +256,7 @@ release_tests_spec: make_emakefile
 	$(INSTALL_DIR) "$(RELSYSDIR)"
 	$(INSTALL_DATA) $(EMAKEFILE) $(TEST_SPEC_FILES) \
 		$(ERL_FILES) "$(RELSYSDIR)"
+	$(INSTALL_DATA) $(HRL_FILES) "$(RELSYSDIR)"
 	$(INSTALL_DATA) $(NO_OPT_ERL_FILES) "$(RELSYSDIR)"
 	$(INSTALL_DATA) $(KERNEL_ERL_FILES) "$(RELSYSDIR)"
 	$(INSTALL_DATA) $(STRIPPED_TYPES_ERL_FILES) "$(RELSYSDIR)"

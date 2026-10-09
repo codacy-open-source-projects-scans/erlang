@@ -472,18 +472,24 @@ configuration in TLS-1.3.
 -type kex_algo()                :: ecdhe_ecdsa
                                  | ecdh_ecdsa
                                  | ecdh_rsa
-                                 | rsa
+                                 | any %% TLS 1.3 (any of TLS-1.3 keyexchanges) , exported
+                                 | legacy_kex().
+
+-doc(#{group => <<"Algorithms Legacy">>}).
+-doc """
+Backwards compatibility and legacy interoperability not recommended.
+""".
+-type legacy_kex()              :: rsa
+                                 | rsa_psk
                                  | dhe_rsa
                                  | dhe_dss
                                  | srp_rsa
                                  | srp_dss
                                  | dhe_psk
-                                 | rsa_psk
                                  | psk
                                  | ecdh_anon
                                  | dh_anon
-                                 | srp_anon
-                                 |  any. %% TLS 1.3 (any of TLS-1.3 keyexchanges) , exported
+                                 | srp_anon.
 
 
 -doc(#{group => <<"Algorithms">>}).
@@ -558,11 +564,20 @@ These curves have been deprecated by RFC 8422.
 -doc """
 TLS-1.3 key exchange configuration.
 """.
--type group()                  :: x25519
+-type group()                  :: x25519mlkem768
+                                | secp384r1mlkem1024
+                                | secp256r1mlkem768
+                                | mlkem1024
+                                | mlkem768
+                                | mlkem512
+                                | x25519
                                 | x448
                                 | secp256r1
                                 | secp384r1
                                 | secp521r1
+                                | brainpoolP512r1tls13
+                                | brainpoolP384r1tls13
+                                | brainpoolP256r1tls13
                                 | ffdhe2048
                                 | ffdhe3072
                                 | ffdhe4096
@@ -577,9 +592,7 @@ SRP cipher suite configuration prior to TLS-1.3.
                                | srp_6144
                                | srp_4096
                                | srp_3072
-                               | srp_2048
-                               | srp_1536
-                               | srp_1024. % exported
+                               | srp_2048.
 
 -doc(#{group => <<"Socket">>}).
 -doc """
@@ -1228,6 +1241,17 @@ There are two implementations available:
     Enables fetching of CRLs specified as http URIs in [X.509 certificate
     extensions](`e:public_key:public_key_records.md`). Requires the
     [Inets](`e:inets:introduction.md`) application.
+
+- **`{allowed_hosts, [string()]}`**
+
+    If http fetching is allowed, a list of allowed hosts can be
+    specified as a hardening option. The entries should be
+    "Host:Port". If ":Port" is left out the default port is 80. If the
+    allowed_hosts is not specified only an external hosts using port
+    80 or 8080 will be allowed.
+
+   > #### Note {: .info }
+   Putting the local host on the allow list will of course make the local host allowed.
 
 - **`ssl_crl_hash_dir`** - Implementation 2
 
@@ -1942,7 +1966,7 @@ Options only relevant to TLS versions prior to TLS-1.3.
   The DER-encoded Diffie-Hellman parameters. If specified, it overrides option
   `dhfile`.
 
-- **`{dh_file, DHfile}`** - Affects DH key exchange cipher suites
+- **`{dhfile, DHfile}`** - Affects DH key exchange cipher suites
 
   Path to a file containing PEM-encoded Diffie Hellman parameters to be used by
   the server if a cipher suite using Diffie Hellman key exchange is negotiated. If
@@ -2050,9 +2074,17 @@ Options only relevant for TLS-1.3.
 
   Configures if the server accepts (`enabled`) or rejects (`disabled`) early data
   sent by a client. The default value is `disabled`.
+
+ > #### Warning {: .warning }
+ >  0-RTT data is inherently replay-vulnerable by TLS 1.3 design. The
+ > mitigation is application-level idempotency or server-side anti-replay.
+ > The server side mechanisms for anti-replay are stateful tickets or stateless
+ > tickets with a configured Bloom filter.
+
 """.
 -type server_option_tls13() :: {session_tickets, SessionTickets:: disabled | stateful | stateless |
-                                                                  stateful_with_cert | stateless_with_cert} |
+                                                                  stateful_with_cert |
+                                                                  stateless_with_cert} |
                                {stateless_tickets_seed, TicketSeed::binary()} |
                                {anti_replay, '10k' | '100k' |
                                 {BloomFilterWindowSize::pos_integer(),
@@ -2115,6 +2147,7 @@ Key value list convening some information about the established connection.
 -type connection_info() :: [{protocol, protocol_version()} |
                             {session_resumption, boolean()} |
                             {selected_cipher_suite, erl_cipher_suite()} |
+                            {selected_group, group()} |
                             {sni_hostname, term()} |
                             {ciphers, [erl_cipher_suite()]}] |
                            connection_info_pre_tls13() |
@@ -2150,6 +2183,7 @@ TLS connection keys for which information can be retrieved.
 """.
 -type connection_info_keys() :: [ protocol
                                 | selected_cipher_suite
+                                | selected_group
                                 | sni_hostname
                                 | session_resumption
                                 | ciphers
@@ -2510,9 +2544,11 @@ handshake(#sslsocket{connection_cb = tls_gen_connection,
   when is_list(SslOpts), is_list(Trackers), ?IS_TIMEOUT(Timeout) ->
     try
         Tracker = proplists:get_value(option_tracker, Trackers),
-	{ok, EmOpts, _} = tls_socket:get_all_opts(Tracker),
-	ssl_gen_statem:handshake(Socket, {SslOpts,
-					  tls_socket:emulated_socket_options(EmOpts, #socket_options{})}, Timeout)
+        {ok, EmOpts} = tls_socket:get_emulated_opts(Tracker),
+        ssl_gen_statem:handshake(Socket,
+                                 {SslOpts,
+                                  tls_socket:emulated_socket_options(EmOpts,
+                                                                     #socket_options{})}, Timeout)
     catch
 	Error = {error, _Reason} -> Error
     end;
@@ -2930,7 +2966,7 @@ Equivalent to `cipher_suites/2`, but lists RFC or OpenSSL string names instead o
 -doc(#{group => <<"Utility Functions">>,
        since => <<"OTP 22.0">>}).
 -spec cipher_suites(Description, Version, StringType) -> [string()] when
-      Description :: default | all | exclusive | anonymous,
+      Description :: default | all | exclusive | anonymous | exclusive_anonymous,
       Version :: protocol_version(),
       StringType :: rfc | openssl.
 
@@ -3111,7 +3147,7 @@ Example:
        since => <<"OTP 26.0">>}).
 -spec signature_algs(Description, Version) -> signature_algs() when
       Description :: default | all | exclusive,
-      Version :: protocol_version().
+      Version :: 'tlsv1.3' | 'tlsv1.2' | 'dtlsv1.2'.
 %%--------------------------------------------------------------------
 
 signature_algs(default, 'tlsv1.3') ->
@@ -3437,7 +3473,7 @@ sockname(#sslsocket{connection_handler = Controller,
 Lists information, mainly concerning TLS/DTLS versions, in runtime for debugging
 and testing purposes.
 
-- **`app_vsn`** - The application version of the SSL application.
+- **`ssl_app`** - The application version of the SSL application.
 
 - **`supported`** - TLS versions supported with current application environment
   and crypto library configuration. Overridden by a version option on

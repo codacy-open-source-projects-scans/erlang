@@ -3,7 +3,7 @@
 %%
 %% SPDX-License-Identifier: Apache-2.0
 %%
-%% Copyright Ericsson AB 2000-2025. All Rights Reserved.
+%% Copyright Ericsson AB 2000-2026. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@
 -moduledoc false.
 
 -include("httpd.hrl").
+-include("../http_lib/http_internal.hrl").
 
 -behaviour(gen_server).
 
@@ -227,8 +228,8 @@ handle_call({unblock, Blocker}, _, #state{blocker_ref = {Blocker, Monitor},
 handle_call({unblock, _}, _, State) ->
     {reply, {error, only_blocker_may_unblock}, State};
 
-handle_call({new_connection, Pid}, _From, State) ->
-    {Status, NewState} = handle_new_connection(State, Pid),
+handle_call({new_connection, _Pid}, _From, State) ->
+    {Status, NewState} = handle_new_connection(State),
     {reply, Status, NewState};
 
 handle_call(Request, From, State) ->
@@ -307,6 +308,8 @@ handle_info(Info, State) ->
     report_error(State, String),
     {noreply, State}.
 
+terminate(_, #state{config_db = undefined}) ->
+    ok;
 terminate(_, #state{config_db = Db}) -> 
     httpd_conf:remove_all(Db),
     ok.
@@ -320,22 +323,16 @@ code_change(_FromVsn, State, _Extra) ->
 %%%--------------------------------------------------------------------
 %%% Internal functions
 %%%--------------------------------------------------------------------
-handle_new_connection(#state{admin_state = AdminState} = State, Handler) ->
-    UsageState = get_ustate(State),
-    handle_new_connection(UsageState, AdminState, State, Handler).
-
-handle_new_connection(_UsageState, unblocked, 
-		      #state{config_db = Db, connection_sup = CSup} = 
-			  State, _) ->
-    Max = httpd_util:lookup(Db, max_clients),
-    case count_children(CSup) of
-	Count when Count =< Max ->
-	    {{ok, accept}, State};
+handle_new_connection(#state{admin_state = unblocked, config_db = Db} = State) ->
+    Children = count_children(State#state.connection_sup),
+    case httpd_util:lookup(Db, max_clients, ?HTTP_MAX_CLIENTS) of
+        MaxClients when MaxClients < Children ->
+           {{reject, busy}, State};
 	_ ->
-	    {{reject, busy}, State}
+           {{ok, accept}, State}
     end;
 
-handle_new_connection(_UsageState, _AdminState, State, _Handler) ->
+handle_new_connection(State) ->
     {{reject, blocked}, State}.
 
 handle_block(disturbing, infinity, 
@@ -379,18 +376,21 @@ handle_reload(Config, State) ->
 
 do_reload(Config, #state{config_db = Db} = State) ->
     case (catch check_constant_values(Db, Config)) of
-	ok ->
-	    %% If something goes wrong between the remove 
-	    %% and the store where fu-ed
-	    httpd_conf:remove_all(Db),
-	    case httpd_conf:store(Config) of
-		{ok, NewConfigDB} ->
-		    {continue, ok, State#state{config_db = NewConfigDB}};
-		Error ->
-		    {stop, Error, State}
-	    end;
-	Error ->
-	    {continue, Error, State}
+        ok ->
+            case httpd_conf:validate_config(Config) of
+                ok ->
+                    httpd_conf:remove_all(Db),
+                    case httpd_conf:store(Config) of
+                        {ok, NewConfigDB} ->
+                            {continue, ok, State#state{config_db = NewConfigDB}};
+                        Error ->
+                            {stop, Error, State#state{config_db = undefined}}
+                    end;
+                Error ->
+                    {continue, Error, State}
+            end;
+        Error ->
+            {continue, Error, State}
     end.
 
 check_constant_values(Db, Config) ->
@@ -421,28 +421,6 @@ check_constant_values(Db, Config) ->
 	    throw({error,{sock_type_changed,SockType,OtherSockType}})
     end,
     ok.
-
-
-%% get_ustate(State) -> idle | active | busy
-%%
-%% Retrieve the usage state of the HTTP server:
-%%   0 active connection            -> idle
-%%   max_clients active connections -> busy
-%%   Otherwise                      -> active
-%%
-get_ustate(State) ->
-    get_ustate(count_children(State#state.connection_sup),State).
-
-get_ustate(0,_State) ->
-    idle;
-get_ustate(ConnectionCnt,State) ->
-    ConfigDB = State#state.config_db,
-    case httpd_util:lookup(ConfigDB, max_clients, 150) of
-	ConnectionCnt ->
-	    busy;
-	_ ->
-	    active
-    end.
 
 make_name(Addr, Port, Profile) ->
     httpd_util:make_name("httpd", Addr, Port, Profile).

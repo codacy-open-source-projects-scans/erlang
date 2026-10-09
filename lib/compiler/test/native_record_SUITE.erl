@@ -26,7 +26,9 @@
 	 init_per_group/2,end_per_group/2,
          local_basic/1,local_updates/1,non_atomic_names/1,
          external_records/1,any_record/1,
-         matching/1,is_record_bif/1,type_opts/1]).
+         matching/1,is_record_bif/1,type_opts/1,fail_label/1,
+         sys_core_nomatch/1,
+         cerl_update_tree/1]).
 
 %% Unexported records.
 -record #empty{}.
@@ -68,13 +70,15 @@ groups() ->
        external_records,
        matching,
        is_record_bif,
-       type_opts
+       type_opts,
+       fail_label,
+       sys_core_nomatch,
+       cerl_update_tree
       ]}].
 
 init_per_suite(Config) ->
     id(Config),
     test_lib:recompile(?MODULE),
-    {module,ext_records} = code:ensure_loaded(ext_records),
     Config.
 
 end_per_suite(_Config) ->
@@ -122,6 +126,8 @@ local_basic(_Config) ->
     ?assertError({badrecord,ARec}, ARec#b{x=99}),
     ?assertError({badfield,{{?MODULE,b},bad_field}},
                  BRec#b{bad_field = some_value}),
+    ?assertError({badfield,{{?MODULE,b},bad_field}},
+                 (#b{})#b{bad_field = some_value}),
 
     %% Test errors when accessing native records.
     ?assertError({badfield,{{?MODULE,b},zoo}}, BRec#b.zoo),
@@ -422,6 +428,13 @@ matching(_Config) ->
     none = match_bin(#b{z = #a{x = 0, y = 0}}),
     none = match_bin(#b{z = #b{}}),
 
+    case #rem{} of
+        #rem{non_existing=_} ->
+            error(should_not_match);
+        #rem{} ->
+            ok
+    end,
+
     ok.
 
 match_abc(R) ->
@@ -576,6 +589,10 @@ type_opts(_Config) ->
     type_opt_update(),
     type_opt_match(),
     type_opt_nested(),
+    type_opt_redundant_tests(),
+    type_opt_meta(),
+    type_opt_will_succeed(),
+    type_opt_ccc(),
     ok.
 
 type_opt_create() ->
@@ -691,6 +708,141 @@ r_length(#r_cons{tl=Tl}, Len) ->
     r_length(Tl, Len + 1);
 r_length(#r_nil{}, Len) ->
     Len.
+
+%% beam_validator would not properly update the type for a native
+%% record stored in two registers. Bug found while dogfooding.
+-import_record(ext_records, [b_blk]).
+type_opt_redundant_tests() ->
+    Blk = id(#b_blk{is=[],last=br}),
+    Blk = type_opt_redundant_tests(Blk),
+    ok.
+
+type_opt_redundant_tests(Blk0) ->
+    Blk1 = force_yreg(Blk0),
+    #b_blk{is=_Is} = Blk1,
+    _ = update_successors(Blk1),
+    Blk1.
+
+force_yreg(Blk) -> Blk.
+
+update_successors(Blk) -> Blk.
+
+%% beam_validator would not consider a record set to be a legal
+%% record. Bug found while dogfooding.
+-import_record(ext_records,
+               [c_alias, c_apply, c_binary, c_bitstr,
+                c_call, c_case, c_catch, c_clause, c_cons,
+                c_fun, c_let, c_letrec, c_literal,
+                c_map, c_map_pair,
+                c_record, c_record_pair,
+                c_module, c_opaque, c_primop,
+                c_receive,c_seq, c_try, c_tuple,
+                c_values, c_var]).
+
+type_opt_meta() ->
+    #c_var{anno=new_anno} = type_opt_meta(id(#c_var{name=42})),
+    ?assertError({case_clause,_}, type_opt_meta(id(#empty{}))),
+    ?assertError({case_clause,_}, type_opt_meta(id(other))),
+    ok.
+
+type_opt_meta(Node) ->
+    case
+        case Node of
+            #c_alias{} -> alias;
+            #c_apply{} -> apply;
+            #c_binary{} -> binary;
+            #c_bitstr{} -> bitstr;
+            #c_call{} -> call;
+            #c_case{} -> 'case';
+            #c_catch{} -> 'catch';
+            #c_clause{} -> clause;
+            #c_cons{} -> cons;
+            #c_fun{} -> 'fun';
+            #c_let{} -> 'let';
+            #c_letrec{} -> letrec;
+            #c_literal{} -> literal;
+            #c_map{} -> map;
+            #c_map_pair{} -> map_pair;
+            #c_module{} -> module;
+            #c_primop{} -> primop;
+            #c_receive{} -> 'receive';
+            #c_seq{} -> seq;
+            #c_record{} -> record;
+            #c_record_pair{} -> record_pair;
+            #c_try{} -> 'try';
+            #c_tuple{} -> tuple;
+            #c_values{} -> values;
+            #c_var{} -> var;
+            #c_opaque{} -> opaque
+        end of
+        var ->
+            %% The type of `Node` is now a set of records, which would
+            %% not be recognized as a record by beam_validator.
+            Node#_{anno=new_anno}
+    end.
+
+%% The live optimization pass would remove the conditional branch
+%% following an `is_record_accessible` instruction, but not the
+%% instructions itself. That would cause the `beam_ssa_codegen` pass
+%% to crash because `is_record_accessible` must always be followed by
+%% a conditional branch. Bug found while dogfooding.
+
+-import_record(ext_records, [b_set]).
+type_opt_will_succeed() ->
+    'maybe' = type_opt_will_succeed_1(#b_set{op=wait_timeout}),
+    'maybe' = type_opt_will_succeed_1(#b_set{op={bif,self}}),
+    ok.
+
+type_opt_will_succeed_1(#b_set{op=wait_timeout}) ->
+    'maybe';
+type_opt_will_succeed_1(#b_set{}) ->
+    'maybe'.
+
+%% cerl_clauses:match/2 did not handle native records, causing the
+%% sys_core_fold pass to crash. Bug found while dogfooding.
+
+type_opt_ccc() ->
+    ?assertError({case_clause,_}, type_opt_ccc(a, b)).
+
+type_opt_ccc(A, B) ->
+    E = {id(A), id(B)},
+    case E of
+        #b_set{} ->
+            ok
+    end.
+
+%% cerl:update_tree/2 did not handle record and record_pair nodes.
+
+cerl_update_tree(_Config) ->
+    Pair = cerl:c_record_pair(cerl:c_atom(f), cerl:c_int(1)),
+    Pair = cerl:update_tree(Pair, cerl:subtrees(Pair)),
+    R = cerl:c_record(cerl:c_atom(rec), [Pair]),
+    R = cerl:update_tree(R, cerl:subtrees(R)),
+    ok.
+
+%% Compiler passes did not handle put_record/6 instruction with
+%% a non-zero fail label.
+fail_label(_Config) ->
+    [true] = ext_creation(),
+    [true] = ext_update(#ext_records:vector{}),
+    ok.
+
+
+ext_creation() ->
+    [try #ext_records:vector{a = 1} catch _:_ -> true end].
+
+ext_update(R) ->
+    [try R#ext_records:vector{a = 1} catch _:_ -> true end].
+
+%% gh-11724: Crash in sys_core_fold. A nomatch warning should be
+%% emitted for `sys_core_nomatch_1/1`.
+sys_core_nomatch(_Config) ->
+    ?assertError({badmatch,#{true:=0}}, sys_core_nomatch_1(id(0))),
+    ok.
+
+sys_core_nomatch_1(X) ->
+    #d{f = X} = #{true => X},
+    ok.
 
 %%% Common utilities.
 

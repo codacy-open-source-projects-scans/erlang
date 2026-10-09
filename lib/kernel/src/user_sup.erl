@@ -31,6 +31,8 @@
 
 -behaviour(supervisor_bridge).
 
+-compile([{nowarn_deprecated_function, [{erlang,exit,2}]}]).
+
 -export([start/0]).
 
 %% Internal exports.
@@ -86,14 +88,13 @@ relay1(Pid) ->
 
 
 %%-----------------------------------------------------------------
-%% Sleep a while in order to let user write all (some) buffered 
-%% information before termination.
+%% Wait for user_drv to flush buffered output before termination.
 %%-----------------------------------------------------------------
 
 -spec terminate(term(), pid()) -> 'ok'.
 
 terminate(_Reason, UserPid) ->
-    receive after 1000 -> ok end,
+    _ = user_drv:flush(),
     exit(UserPid, kill),
     ok.
 

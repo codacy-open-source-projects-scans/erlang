@@ -160,7 +160,7 @@ real_requests_esi() ->
 
 simulated_unix_socket() ->
     [unix_domain_socket,
-    invalid_ipfamily_unix_socket].
+     invalid_ipfamily_unix_socket].
 
 only_simulated() ->
     [
@@ -198,6 +198,7 @@ only_simulated() ->
      redirect_temporary_redirect,
      redirect_permanent_redirect,
      redirect_relative_uri,
+     redirect_strips_sensitive_headers,
      port_in_host_header,
      redirect_port_in_host_header,
      te_header_undefined_no_connection,
@@ -215,7 +216,10 @@ only_simulated() ->
      stream_fun_server_close,
      no_content_length_for_bodyless_requests,
      content_length_for_empty_body_requests,
-     content_length_via_headers_as_is
+     content_length_via_headers_as_is,
+     abnormal_header_size,
+     invalid_content_length,
+     abnormal_trailer_size
     ].
 
 server_closing_connection() ->
@@ -955,6 +959,45 @@ redirect_relative_different_port(Config) when is_list(Config) ->
 	= httpc:request(post, {URL301, Headers, "text/plain", "foobar"},
 			[], RequestOpts, Profile).
 %%-------------------------------------------------------------------------
+redirect_strips_sensitive_headers() ->
+    [{doc, "RFC 9110 §15.4: Authorization, Proxy-Authorization, Cookie, "
+      "Referer, and Origin headers MUST NOT be forwarded on cross-origin "
+      "(different host/port) redirects (CVE / GHSA-m75x-4vwg-ggjh)."}].
+redirect_strips_sensitive_headers(Config) when is_list(Config) ->
+    %% Origin server issues a 301 to a second sim_http server (different port
+    %% = cross-origin).  The target echoes which sensitive headers it received
+    %% back as x-received-* response headers so the test can inspect them.
+    OriginUrl = url(group_name(Config), "/301_custom_url.html", Config),
+    RequestOpts = proplists:get_value(request_opts, Config, []),
+    Profile = ?profile(Config),
+    Group  = group_name(Config),
+    TargetPort = server_start(Group, server_config(Group, Config)),
+    {ok, Host} = inet:gethostname(),
+    TargetUrlStart =
+        case OriginUrl of
+            "http://" ++ _ -> "http://";
+            "https://" ++ _ -> "https://"
+        end,
+    TargetUrl = TargetUrlStart ++ Host ++ ":" ++ integer_to_list(TargetPort) ++
+                    "/capture_sensitive_redirect_target.html",
+
+    RedirectHeaders = [{"x-test-301-url",       TargetUrl},
+                       {"authorization",         "Basic dXNlcjpzM2NyM3Q="},
+                       {"proxy-authorization",   "Basic dXNlcjpzM2NyM3Q="},
+                       {"cookie",                "session=secret"},
+                       {"referer",               "http://example.com/secret"},
+                       {"origin",                "http://example.com"}],
+
+    {ok, {{_, 200, _}, RespHeaders, _}} =
+        httpc:request(get, {OriginUrl, RedirectHeaders}, [?SSL_NO_VERIFY], RequestOpts, Profile),
+
+    ?assertEqual("false", proplists:get_value("x-received-authorization",       RespHeaders)),
+    ?assertEqual("false", proplists:get_value("x-received-proxy-authorization", RespHeaders)),
+    ?assertEqual("false", proplists:get_value("x-received-cookie",              RespHeaders)),
+    ?assertEqual("false", proplists:get_value("x-received-referer",             RespHeaders)),
+    ?assertEqual("false", proplists:get_value("x-received-origin",              RespHeaders)).
+
+%%-------------------------------------------------------------------------
 cookie() ->
     [{doc, "Test cookies on the default profile."}].
 cookie(Config) when is_list(Config) ->
@@ -1404,12 +1447,10 @@ headers_dummy(Config) when is_list(Config) ->
 		       {"Authorization", Auth},
 		       {"Expect", "1#100-continue"},
 		       {"User-Agent","inets"},
-		       {"Transfer-Encoding","chunked"},
 		       {"Range", " bytes=0-499"},
 		       {"If-Range", "Sat, 29 Oct 1994 19:43:31 GMT"},
 		       {"If-Match", "*"},
 		       {"Content-Type", "text/plain"},
-		       {"Content-Length", "6"},
 		       {"Content-Language", "en"},
 		       {"Content-Location", "http://www.foobar.se"},
 		       {"Content-MD5",
@@ -1444,7 +1485,7 @@ headers_conflict_chunked_with_length(Config) when is_list(Config) ->
     Request = {url(group_name(Config), "/headers_conflict_chunked_with_length.html", Config), []},
     RequestOpts = proplists:get_value(request_opts, Config, []),
     Profile = ?profile(Config),
-    {error, {could_not_parse_as_http, _}} = httpc:request(get, Request,
+    {error, {headers_conflict, _}} = httpc:request(get, Request,
                                                           [{relaxed, false},?SSL_NO_VERIFY],
                                                           RequestOpts, Profile),
     {ok,{{_,200,_},_,_}} = httpc:request(get, Request, [{relaxed, true}, ?SSL_NO_VERIFY],
@@ -2253,6 +2294,104 @@ def_ssl_opt(_Config) ->
     ok.
 
 %%-------------------------------------------------------------------------
+abnormal_header_size() ->
+    [{doc, "httpc has two options to protect against unreasonable amounts of"
+           "data to be parsed; namely max_header_size and max_body_size which"
+           "default to 10240 and nolimit"}].
+abnormal_header_size(Config) ->
+    RequestNormal = {url(group_name(Config), "/normal_header_size_restricted.html", Config), []},
+    RequestAbnormal = {url(group_name(Config), "/abnormal_header_size.html", Config), []},
+    RequestBoundary = {url(group_name(Config), "/boundary_header_size.html", Config), []},
+    RequestNormalBigBody = {url(group_name(Config), "/nomal_header_size_big_body.html", Config), []},
+    Profile = ?profile(Config),
+
+    %% Normal response passes with explicit max_header_size
+    {ok, {{_, 200, _}, _Headers, _Body}} =
+        httpc:request(get, RequestNormal,
+                      [?SSL_NO_VERIFY],
+                      [{max_header_size, 4096}],
+                      Profile),
+    %% Rejected when max_header_size is artificially low
+    {error, {header_too_long, {max, 16}}} =
+        httpc:request(get, RequestNormal,
+                      [?SSL_NO_VERIFY],
+                      [{max_header_size, 16}],
+                      Profile),
+    %% Abnormal response (>10240 total header bytes) rejected with default limit
+    {error, {header_too_long, {max, ?HTTP_MAX_HEADER_SIZE}}} =
+        httpc:request(get, RequestAbnormal,
+                      [?SSL_NO_VERIFY],
+                      [],
+                      Profile),
+    %% Boundary: one byte under limit fails, exactly at limit passes
+    {error, {header_too_long, _}} =
+        httpc:request(get, RequestBoundary,
+                      [?SSL_NO_VERIFY],
+                      [{max_header_size, 135}],
+                      Profile),
+    {ok, {{_, 200, _}, _, _}} =
+        httpc:request(get, RequestBoundary,
+                      [?SSL_NO_VERIFY],
+                      [{max_header_size, 136}],
+                      Profile),
+
+    %% max_body_size rejects oversized body
+    {error, body_too_big} =
+        httpc:request(get, RequestNormalBigBody,
+                      [?SSL_NO_VERIFY],
+                      [{max_body_size, 1000}],
+                      Profile),
+
+%% nolimit bypasses the check (backward compatibility)
+    {ok, {{_, 200, _}, _, _}} =
+        httpc:request(get, RequestAbnormal,
+                      [?SSL_NO_VERIFY],
+                      [{max_header_size, nolimit},
+                       {body_format, binary}],
+                      Profile),
+    ok.
+
+%%-------------------------------------------------------------------------
+invalid_content_length() ->
+    [{doc, "Malformed Content-Length value is rejected during header parsing"}].
+invalid_content_length(Config) ->
+    Request = {url(group_name(Config), "/invalid_content_length.html", Config),
+               [{"connection", "close"}]},
+    Profile = ?profile(Config),
+    {error, {invalid_content_length, _}} =
+        httpc:request(get, Request, [?SSL_NO_VERIFY], [], Profile),
+    ok.
+
+%%-------------------------------------------------------------------------
+abnormal_trailer_size() ->
+    [{doc, "Chunked trailers are bounded by the same max_header_size option"}].
+abnormal_trailer_size(Config) ->
+    RequestNormal = {url(group_name(Config), "/chunked_trailer_normal.html", Config), []},
+    RequestAbnormal = {url(group_name(Config), "/chunked_trailer_abnormal.html", Config), []},
+    Profile = ?profile(Config),
+
+    %% Normal chunked response with small trailers passes
+    {ok, {{_, 200, _}, _Headers, _Body}} =
+        httpc:request(get, RequestNormal,
+                      [?SSL_NO_VERIFY],
+                      [],
+                      Profile),
+
+    %% Chunked response with oversized trailers rejected
+    {error, {header_too_long, {max, _}}} =
+        httpc:request(get, RequestAbnormal,
+                      [?SSL_NO_VERIFY],
+                      [{max_header_size, 64}],
+                      Profile),
+
+    %% Same oversized trailers pass with nolimit
+    {ok, {{_, 200, _}, _, _}} =
+        httpc:request(get, RequestAbnormal,
+                      [?SSL_NO_VERIFY],
+                      [{max_header_size, nolimit}],
+                      Profile),
+    ok.
+
 remote_socket_close_high_load() ->
     [{doc,
       "Verify remote socket closure (related tickets: OTP-18509, OTP-18545,"
@@ -3409,6 +3548,79 @@ handle_uri(_,"/check_has_content_length_zero.html", _,Headers,_, DefaultResponse
         _ ->
             Error
     end;
+%% Capture endpoint for redirect_strips_sensitive_headers.
+%% Echoes presence of each sensitive header as an x-received-* response header.
+handle_uri(_,"/capture_sensitive_redirect_target.html",_,Headers,_,_) ->
+    Present = fun(Name) ->
+        case proplists:is_defined(Name, Headers) of
+            true  -> "true";
+            false -> "false"
+        end
+    end,
+    "HTTP/1.1 200 OK\r\n" ++
+        "Content-Length:0\r\n" ++
+        "X-Received-Authorization:"       ++ Present("authorization")       ++ "\r\n" ++
+        "X-Received-Proxy-Authorization:" ++ Present("proxy-authorization") ++ "\r\n" ++
+        "X-Received-Cookie:"              ++ Present("cookie")              ++ "\r\n" ++
+        "X-Received-Referer:"             ++ Present("referer")             ++ "\r\n" ++
+        "X-Received-Origin:"              ++ Present("origin")              ++ "\r\n" ++
+        "\r\n";
+handle_uri(_, "/normal_header_size_restricted.html", _, _, _, _) ->
+    "HTTP/1.1 200 OK\r\n" ++
+    "Content-Length:150\r\n" ++
+    "Connection:close\r\n" ++
+    "\r\n" ++
+    lists:flatten(["OK " || _ <- lists:seq(1,50)]);
+
+handle_uri(_, "/boundary_header_size.html", _, _, _, _) ->
+    "HTTP/1.1 200 OK\r\n" ++
+    "Content-Length:2\r\n" ++
+    "Connection:close\r\n" ++
+    "X-Pad:" ++ lists:duplicate(94, $A) ++ "\r\n" ++
+    "\r\n" ++
+    "OK";
+
+handle_uri(_, "/abnormal_header_size.html", _, _, _, _) ->
+    "HTTP/1.1 200 OK\r\n" ++
+    "Content-Length:23\r\n" ++
+    "X-Pad:" ++ lists:duplicate(10241, $0) ++ "\r\n" ++
+    "Connection: close\r\n" ++
+    "\r\n" ++
+    "This should not be read";
+handle_uri(_, "/nomal_header_size_big_body.html", _, _, _, _) ->
+    "HTTP/1.1 200 OK\r\n" ++
+    "Content-Length:20000\r\n" ++
+    "Connection:close\r\n" ++
+    "\r\n" ++
+    lists:duplicate(20000, $A);
+
+handle_uri(_, "/invalid_content_length.html", _, _, _, _) ->
+    "HTTP/1.1 200 OK\r\n" ++
+    "Content-Length:abc\r\n" ++
+    "Connection:close\r\n" ++
+    "\r\n" ++
+    "body";
+
+handle_uri(_, "/chunked_trailer_normal.html", _, _, _, _) ->
+    "HTTP/1.1 200 OK\r\n" ++
+    "Transfer-Encoding: chunked\r\n" ++
+    "Connection:close\r\n" ++
+    "\r\n" ++
+    "5\r\nhello\r\n" ++
+    "0\r\n" ++
+    "X-Checksum: abc123\r\n" ++
+    "\r\n";
+
+handle_uri(_, "/chunked_trailer_abnormal.html", _, _, _, _) ->
+    "HTTP/1.1 200 OK\r\n" ++
+    "Transfer-Encoding: chunked\r\n" ++
+    "Connection:close\r\n" ++
+    "\r\n" ++
+    "5\r\nhello\r\n" ++
+    "0\r\n" ++
+    "X-Huge:" ++ lists:duplicate(200, $B) ++ "\r\n" ++
+    "\r\n";
+
 handle_uri(_,_,_,_,_,DefaultResponse) ->
     DefaultResponse.
 

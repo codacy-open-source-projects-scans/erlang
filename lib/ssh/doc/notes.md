@@ -21,6 +21,373 @@ limitations under the License.
 -->
 # SSH Release Notes
 
+## Ssh 6.0.6
+
+### Fixed Bugs and Malfunctions
+
+- Fixed a vulnerability where the `max_channels` daemon option was not enforced for session channels without an active subsystem, allowing a remote authenticated user to open an infinite number of channels and exhaust server resources despite the configured limit.
+  
+  
+  The default value of the max_channels daemon option has been changed
+  from infinity to 256. Deployments requiring more than 256
+  simultaneous channels per connection can restore the previous behavior
+  by setting `{max_channels, infinity}`.
+  
+  
+  The default value of the max_sessions daemon option has been changed
+  from infinity to 1024. Deployments requiring more concurrent SSH
+  connections can restore the previous behavior by setting
+  `{max_sessions, infinity}`.
+
+  *** POTENTIAL INCOMPATIBILITY ***
+
+  Own Id: OTP-20287 Aux Id: [PR-11523], [CVE-2026-68956], GHSA-qhcm-px9c-rvfh
+
+- The SSH daemon no longer rejects a `subsystem` request that is preceded by `env` or `pty-req` request on the same channel.
+
+  Own Id: OTP-20371 Aux Id: [GH-11586], [PR-11616], ERIERL-1363
+
+[PR-11523]: https://github.com/erlang/otp/pull/11523
+[CVE-2026-68956]: https://nvd.nist.gov/vuln/detail/2026-68956
+[GH-11586]: https://github.com/erlang/otp/issues/11586
+[PR-11616]: https://github.com/erlang/otp/pull/11616
+
+## Ssh 6.0.5
+
+### Fixed Bugs and Malfunctions
+
+- Fixed a bug where multiple subsystem requests could succeed on same ssh channel which is forbidden by RFC 4254 §6.5
+
+  Own Id: OTP-20284 Aux Id: [PR-11437]
+
+[PR-11437]: https://github.com/erlang/otp/pull/11437
+
+## Ssh 6.0.4
+
+### Fixed Bugs and Malfunctions
+
+- The SSH client and server now reject incoming packets not aligned to the cipher block size as required by RFC 4253 §6. For CBC ciphers, a timing-safe "packet discard" mechanism (CVE-2008-5161 mitigation) ensures structural errors are indistinguishable from MAC failures before disconnecting. AEAD and encrypt-then-MAC modes disconnect immediately.
+
+  Own Id: OTP-20137 Aux Id: [PR-11110]
+
+[PR-11110]: https://github.com/erlang/otp/pull/11110
+
+## Ssh 6.0.3
+
+### Fixed Bugs and Malfunctions
+
+- DH key exchange now enforces strict bounds (1 < e/f < p-1, 1 < K < p-1) on all paths, matching OpenSSH and Go. No interop impact.
+
+  Own Id: OTP-20229 Aux Id: [PR-11303]
+
+- Validate DH group parameters (P, G) received from the server during DH-GEX key exchange. The client now rejects groups where P is smaller than 2048 bits or G is not in the range (1, P-1). The default minimum in dh_gex_limits has been raised to 2048 on both client and server.
+
+  Own Id: OTP-20258 Aux Id: ERIERL-1341, [PR-11369]
+
+[PR-11303]: https://github.com/erlang/otp/pull/11303
+[PR-11369]: https://github.com/erlang/otp/pull/11369
+
+## Ssh 6.0.2
+
+### Fixed Bugs and Malfunctions
+
+- Fixed a path-existence oracle in the SFTP server where `SSH_FXP_REALPATH` requests with `..` components could bypass the configured root directory isolation, allowing an authenticated client to determine whether arbitrary paths exist on the host filesystem.
+
+  Own Id: OTP-20183 Aux Id: [CVE-2026-53422], GHSA-h9pw-h5w4-h976, [PR-11294]
+
+- Fixed an infinite loop in the SFTP server triggered when receiving `SSH_MSG_CHANNEL_EXTENDED_DATA` on an SFTP channel, which caused the channel process to spin indefinitely on CPU without consuming its message queue.
+
+  Own Id: OTP-20186 Aux Id: [CVE-2026-54886], GHSA-7wp4-pc27-2vj9, [PR-11295]
+
+- Fixed mlkem768x25519 hybrid key exchange failing intermittently with "incorrect signature" when the X25519 shared secret had a leading zero byte. The shared secret is now encoded as a fixed-width 32-byte string per the specification.
+
+  Own Id: OTP-20196 Aux Id: [PR-11209]
+
+- Fixed a race condition where SSH keepalive responses could be matched to unrelated pending requests due to incorrect request queue ordering. Requests are now matched in the order they were sent.
+
+  Own Id: OTP-20198 Aux Id: [PR-11244]
+
+- The SFTP server now caps the read length in `SSH_FXP_READ` requests to 255 KiB (matching OpenSSH's `SFTP_MAX_READ_LENGTH`), preventing excessive memory allocation when clients request large reads.
+
+  Own Id: OTP-20200 Aux Id: [PR-11259]
+
+- Removed a server-side workaround (OTP-14827, introduced in OTP 20) that accepted SHA-1 user-auth signatures from clients identifying as OpenSSH 7.x when rsa-sha2-* was negotiated. The workaround addressed a distro-specific build issue in 2017 that no longer exists. Clients affected by this removal (extremely unlikely — requires a 10-year-old unpatched OpenSSH build) will see authentication failures and must upgrade.
+
+  Own Id: OTP-20206 Aux Id: [PR-11268]
+
+[CVE-2026-53422]: https://nvd.nist.gov/vuln/detail/2026-53422
+[PR-11294]: https://github.com/erlang/otp/pull/11294
+[CVE-2026-54886]: https://nvd.nist.gov/vuln/detail/2026-54886
+[PR-11295]: https://github.com/erlang/otp/pull/11295
+[PR-11209]: https://github.com/erlang/otp/pull/11209
+[PR-11244]: https://github.com/erlang/otp/pull/11244
+[PR-11259]: https://github.com/erlang/otp/pull/11259
+[PR-11268]: https://github.com/erlang/otp/pull/11268
+
+## Ssh 6.0.1
+
+### Fixed Bugs and Malfunctions
+
+- Fixed a timing-based username enumeration vulnerability during password authentication with the user_passwords option. A dummy PBKDF2 computation is now performed for invalid usernames to match the response time of valid ones.
+
+  Own Id: OTP-20153 Aux Id: [CVE-2026-48859], GHSA-3w6p-vwhf-wvp4, [PR-11157]
+
+- Fixed SSH_FXP_READLINK handler in ssh_sftpd to strip the backend root prefix from symlink targets before returning them to the client, preventing disclosure of the server's absolute filesystem path when the root option is configured.
+
+  Own Id: OTP-20162 Aux Id: [CVE-2026-48855], GHSA-pv7g-pjrq-x2fh, [PR-11192]
+
+- Fixed a race condition where SSH keep-alive responses could consume pending channel open requests, causing channel setup to fail silently.
+
+  Own Id: OTP-20181 Aux Id: [PR-11205]
+
+[CVE-2026-48859]: https://nvd.nist.gov/vuln/detail/2026-48859
+[PR-11157]: https://github.com/erlang/otp/pull/11157
+[CVE-2026-48855]: https://nvd.nist.gov/vuln/detail/2026-48855
+[PR-11192]: https://github.com/erlang/otp/pull/11192
+[PR-11205]: https://github.com/erlang/otp/pull/11205
+
+## Ssh 6.0
+
+### Fixed Bugs and Malfunctions
+
+- Password-based authentication has been updated to follow current security
+  best practices. Key-based authentication remains recommended for production systems.
+
+  Own Id: OTP-19982 Aux Id: [PR-10571]
+
+- Added explicit size validation guards for pre-authentication SSH messages to improve defense-in-depth against DoS attacks. Messages now have per-field size limits based on RFC specifications:
+    - Transport layer messages (DISCONNECT, IGNORE, DEBUG)
+    - Key exchange messages (DH, ECDH, DH-GEX)
+    - Service request messages (SERVICE_REQUEST, SERVICE_ACCEPT, EXT_INFO)
+  
+  This change enhances the existing 256KB global packet size limit with granular per-message validation. Compliant implementations are not affected.
+
+  *** POTENTIAL INCOMPATIBILITY ***
+
+  Own Id: OTP-19995 Aux Id: [PR-10739]
+
+- The SFTP subsystem `root` option now properly rejects relative paths at daemon startup. Previously, relative paths would cause unpredictable behavior as file operations resolved relative to the Erlang VM's current working directory. The option now requires an absolute path or empty string.
+
+  *** POTENTIAL INCOMPATIBILITY ***
+
+  Own Id: OTP-20019 Aux Id: [PR-10820]
+
+- Dynamic atom creation has been replaced with static lookups in `ssh_transport` and `ssh_connection`, using a dedicated OID-to-algorithm mapping function in `ssh_message`.
+
+  Own Id: OTP-20127 Aux Id: [PR-11078]
+
+[PR-10571]: https://github.com/erlang/otp/pull/10571
+[PR-10739]: https://github.com/erlang/otp/pull/10739
+[PR-10820]: https://github.com/erlang/otp/pull/10820
+[PR-11078]: https://github.com/erlang/otp/pull/11078
+
+### Improvements and New Features
+
+- Using KEX strict extension names as specified in draft-ietf-sshm-strict-kex-00. Pre standard names are still supported.
+
+  Own Id: OTP-19709 Aux Id: [PR-10115]
+
+- Added an `alive` option to detect and terminate dead SSH connections. Functionally equivalent to OpenSSH's ClientAlive*/ServerAlive* settings.
+
+  Own Id: OTP-19750 Aux Id: [PR-9125], [PR-10372]
+
+- `ssh:stop_deamon` now uses `supervisor:stop` for shutting down daemons. With this change, the scenario when `ssh:stop_daemon` is called for a non-existing process results in calling process exiting. Previously an error tuple was returned (which was not documented).
+
+  *** POTENTIAL INCOMPATIBILITY ***
+
+  Own Id: OTP-19801 Aux Id: [PR-10253]
+
+- The default key exchange algorithm is now mlkem768x25519-sha256, a hybrid quantum-resistant algorithm combining ML-KEM-768 with X25519. This
+  provides protection against both classical and quantum computer attacks while maintaining backward compatibility through automatic fallback to
+  other algorithms when peers don't support it.
+
+  *** POTENTIAL INCOMPATIBILITY ***
+
+  Own Id: OTP-19965 Aux Id: [PR-10656]
+
+- The SSH daemon now defaults to disabled for shell and exec services,
+  implementing the "secure by default" principle. This prevents authenticated
+  users from executing arbitrary Erlang code unless explicitly configured.
+  
+  Applications requiring shell or exec functionality must now explicitly enable:
+  ```erlang
+    %% Enable Erlang shell
+    ssh:daemon(Port, [{shell, {shell, start, []}} | Options])
+  
+    %% Enable Erlang term evaluation via exec
+    ssh:daemon(Port, [{exec, erlang_eval} | Options])
+  
+    %% Restore complete old behavior
+    ssh:daemon(Port, [{shell, {shell, start, []}},
+                      {exec, erlang_eval}
+                      | Options])
+  ```
+
+  *** POTENTIAL INCOMPATIBILITY ***
+
+  Own Id: OTP-19969 Aux Id: [PR-10970], [PR-11080], ERIERL-1319
+
+- Added SFTP resource limits
+  section to hardening guide covering `max_handles`, `max_path`, and `max_files` with deployment recommendations.
+
+  Own Id: OTP-20031 Aux Id: [PR-10838]
+
+- Added support for `-unsafe` attributes, which is used to mark functions as unsafe to use. 
+  
+  This is similar to but separate from deprecation, and the compiler will by default now generate warnings for calls to functions in Erlang/OTP that are known to be always unsafe.
+  
+  Furthermore, `m:xref` can now be used to find calls to functions in another application that lack a `-doc` attribute (`undocumented_function_calls`), calls to functions in another application marked `-doc false.` (`private_function_calls`), as well as calls to unsafe functions (`unsafe_function_calls`).
+
+  Own Id: OTP-20066 Aux Id: [PR-10839]
+
+- The SFTP subsystem is no longer enabled by default when starting an
+  SSH daemon. To enable it, add the subsystems option explicitly:
+  
+  ```erlang
+  ssh:daemon(Port, [{subsystems, [ssh_sftpd:subsystem_spec([])]} | Options])
+  ```
+
+  *** POTENTIAL INCOMPATIBILITY ***
+
+  Own Id: OTP-20078 Aux Id: [PR-10970]
+
+- The SSH hardening guide has been improved with a timeout overview table replacing the previous image, corrected terminology ("authenticated" instead of "authorized"), and new examples for loopback binding, public key user checking, and password lockout using ETS.
+
+  Own Id: OTP-20079 Aux Id: [PR-10970]
+
+- With this change usage of `zlib` compression algorithm in SSH is deprecated and scheduled for removal in OTP 30.0
+
+  Own Id: OTP-20099 Aux Id: [PR-11010]
+
+- Updated SSH documentation with current OTP 29 algorithm defaults,
+  including the new mlkem768x25519-sha256 post-quantum key exchange.
+  Fixed stale examples, typos, and improved document structure.
+
+  Own Id: OTP-20100 Aux Id: [PR-11012]
+
+[PR-10115]: https://github.com/erlang/otp/pull/10115
+[PR-9125]: https://github.com/erlang/otp/pull/9125
+[PR-10372]: https://github.com/erlang/otp/pull/10372
+[PR-10253]: https://github.com/erlang/otp/pull/10253
+[PR-10656]: https://github.com/erlang/otp/pull/10656
+[PR-10970]: https://github.com/erlang/otp/pull/10970
+[PR-11080]: https://github.com/erlang/otp/pull/11080
+[PR-10838]: https://github.com/erlang/otp/pull/10838
+[PR-10839]: https://github.com/erlang/otp/pull/10839
+[PR-10970]: https://github.com/erlang/otp/pull/10970
+[PR-10970]: https://github.com/erlang/otp/pull/10970
+[PR-11010]: https://github.com/erlang/otp/pull/11010
+[PR-11012]: https://github.com/erlang/otp/pull/11012
+
+## Ssh 5.5.2.6
+
+### Fixed Bugs and Malfunctions
+
+- Fixed a vulnerability where the `max_channels` daemon option was not enforced for session channels without an active subsystem, allowing a remote authenticated user to open an infinite number of channels and exhaust server resources despite the configured limit.
+  
+  
+  The default value of the max_channels daemon option has been changed
+  from infinity to 256. Deployments requiring more than 256
+  simultaneous channels per connection can restore the previous behavior
+  by setting `{max_channels, infinity}`.
+  
+  
+  The default value of the max_sessions daemon option has been changed
+  from infinity to 1024. Deployments requiring more concurrent SSH
+  connections can restore the previous behavior by setting
+  `{max_sessions, infinity}`.
+
+  *** POTENTIAL INCOMPATIBILITY ***
+
+  Own Id: OTP-20287 Aux Id: [PR-11523], [CVE-2026-68956], GHSA-qhcm-px9c-rvfh
+
+- The SSH daemon no longer rejects a `subsystem` request that is preceded by `env` or `pty-req` request on the same channel.
+
+  Own Id: OTP-20371 Aux Id: [GH-11586], [PR-11616], ERIERL-1363
+
+[PR-11523]: https://github.com/erlang/otp/pull/11523
+[CVE-2026-68956]: https://nvd.nist.gov/vuln/detail/2026-68956
+[GH-11586]: https://github.com/erlang/otp/issues/11586
+[PR-11616]: https://github.com/erlang/otp/pull/11616
+
+## Ssh 5.5.2.5
+
+### Fixed Bugs and Malfunctions
+
+- Fixed a bug where multiple subsystem requests could succeed on same ssh channel which is forbidden by RFC 4254 §6.5
+
+  Own Id: OTP-20284 Aux Id: [PR-11437]
+
+[PR-11437]: https://github.com/erlang/otp/pull/11437
+
+## Ssh 5.5.2.4
+
+### Fixed Bugs and Malfunctions
+
+- The SSH client and server now reject incoming packets not aligned to the cipher block size as required by RFC 4253 §6. For CBC ciphers, a timing-safe "packet discard" mechanism (CVE-2008-5161 mitigation) ensures structural errors are indistinguishable from MAC failures before disconnecting. AEAD and encrypt-then-MAC modes disconnect immediately.
+
+  Own Id: OTP-20137 Aux Id: [PR-11110]
+
+[PR-11110]: https://github.com/erlang/otp/pull/11110
+
+## Ssh 5.5.2.3
+
+### Fixed Bugs and Malfunctions
+
+- DH key exchange now enforces strict bounds (1 < e/f < p-1, 1 < K < p-1) on all paths, matching OpenSSH and Go. No interop impact.
+
+  Own Id: OTP-20229 Aux Id: [PR-11303]
+
+- Validate DH group parameters (P, G) received from the server during DH-GEX key exchange. The client now rejects groups where P is smaller than 2048 bits or G is not in the range (1, P-1). The default minimum in dh_gex_limits has been raised to 2048 on both client and server.
+
+  Own Id: OTP-20258 Aux Id: ERIERL-1341, [PR-11369]
+
+[PR-11303]: https://github.com/erlang/otp/pull/11303
+[PR-11369]: https://github.com/erlang/otp/pull/11369
+
+## Ssh 5.5.2.2
+
+### Fixed Bugs and Malfunctions
+
+- Fixed a path-existence oracle in the SFTP server where `SSH_FXP_REALPATH` requests with `..` components could bypass the configured root directory isolation, allowing an authenticated client to determine whether arbitrary paths exist on the host filesystem.
+
+  Own Id: OTP-20183 Aux Id: [CVE-2026-53422], GHSA-h9pw-h5w4-h976, [PR-11294]
+
+- Fixed an infinite loop in the SFTP server triggered when receiving `SSH_MSG_CHANNEL_EXTENDED_DATA` on an SFTP channel, which caused the channel process to spin indefinitely on CPU without consuming its message queue.
+
+  Own Id: OTP-20186 Aux Id: [CVE-2026-54886], GHSA-7wp4-pc27-2vj9, [PR-11295]
+
+- Fixed mlkem768x25519 hybrid key exchange failing intermittently with "incorrect signature" when the X25519 shared secret had a leading zero byte. The shared secret is now encoded as a fixed-width 32-byte string per the specification.
+
+  Own Id: OTP-20196 Aux Id: [PR-11209]
+
+- The SFTP server now caps the read length in `SSH_FXP_READ` requests to 255 KiB (matching OpenSSH's `SFTP_MAX_READ_LENGTH`), preventing excessive memory allocation when clients request large reads.
+
+  Own Id: OTP-20200 Aux Id: [PR-11259]
+
+- Removed a server-side workaround (OTP-14827, introduced in OTP 20) that accepted SHA-1 user-auth signatures from clients identifying as OpenSSH 7.x when rsa-sha2-* was negotiated. The workaround addressed a distro-specific build issue in 2017 that no longer exists. Clients affected by this removal (extremely unlikely — requires a 10-year-old unpatched OpenSSH build) will see authentication failures and must upgrade.
+
+  Own Id: OTP-20206 Aux Id: [PR-11268]
+
+[CVE-2026-53422]: https://nvd.nist.gov/vuln/detail/2026-53422
+[PR-11294]: https://github.com/erlang/otp/pull/11294
+[CVE-2026-54886]: https://nvd.nist.gov/vuln/detail/2026-54886
+[PR-11295]: https://github.com/erlang/otp/pull/11295
+[PR-11209]: https://github.com/erlang/otp/pull/11209
+[PR-11259]: https://github.com/erlang/otp/pull/11259
+[PR-11268]: https://github.com/erlang/otp/pull/11268
+
+## Ssh 5.5.2.1
+
+### Fixed Bugs and Malfunctions
+
+- Fixed SSH_FXP_READLINK handler in ssh_sftpd to strip the backend root prefix from symlink targets before returning them to the client, preventing disclosure of the server's absolute filesystem path when the root option is configured.
+
+  Own Id: OTP-20162 Aux Id: [CVE-2026-48855], GHSA-pv7g-pjrq-x2fh, [PR-11192]
+
+[CVE-2026-48855]: https://nvd.nist.gov/vuln/detail/2026-48855
+[PR-11192]: https://github.com/erlang/otp/pull/11192
+
 ## Ssh 5.5.2
 
 ### Fixed Bugs and Malfunctions
@@ -232,6 +599,110 @@ limitations under the License.
 [PR-9670]: https://github.com/erlang/otp/pull/9670
 [PR-9214]: https://github.com/erlang/otp/pull/9214
 [PR-9298]: https://github.com/erlang/otp/pull/9298
+
+## Ssh 5.2.11.13
+
+### Fixed Bugs and Malfunctions
+
+- Fixed a vulnerability where the `max_channels` daemon option was not enforced for session channels without an active subsystem, allowing a remote authenticated user to open an infinite number of channels and exhaust server resources despite the configured limit.
+  
+  
+  The default value of the max_channels daemon option has been changed
+  from infinity to 256. Deployments requiring more than 256
+  simultaneous channels per connection can restore the previous behavior
+  by setting `{max_channels, infinity}`.
+  
+  
+  The default value of the max_sessions daemon option has been changed
+  from infinity to 1024. Deployments requiring more concurrent SSH
+  connections can restore the previous behavior by setting
+  `{max_sessions, infinity}`.
+
+  *** POTENTIAL INCOMPATIBILITY ***
+
+  Own Id: OTP-20287 Aux Id: [PR-11523], [CVE-2026-68956], GHSA-qhcm-px9c-rvfh
+
+- The SSH daemon no longer rejects a `subsystem` request that is preceded by `env` or `pty-req` request on the same channel.
+
+  Own Id: OTP-20371 Aux Id: [GH-11586], [PR-11616], ERIERL-1363
+
+[PR-11523]: https://github.com/erlang/otp/pull/11523
+[CVE-2026-68956]: https://nvd.nist.gov/vuln/detail/2026-68956
+[GH-11586]: https://github.com/erlang/otp/issues/11586
+[PR-11616]: https://github.com/erlang/otp/pull/11616
+
+## Ssh 5.2.11.12
+
+### Fixed Bugs and Malfunctions
+
+- Fixed a bug where multiple subsystem requests could succeed on same ssh channel which is forbidden by RFC 4254 §6.5
+
+  Own Id: OTP-20284 Aux Id: [PR-11437]
+
+[PR-11437]: https://github.com/erlang/otp/pull/11437
+
+## Ssh 5.2.11.11
+
+### Fixed Bugs and Malfunctions
+
+- The SSH client and server now reject incoming packets not aligned to the cipher block size as required by RFC 4253 §6. For CBC ciphers, a timing-safe "packet discard" mechanism (CVE-2008-5161 mitigation) ensures structural errors are indistinguishable from MAC failures before disconnecting. AEAD and encrypt-then-MAC modes disconnect immediately.
+
+  Own Id: OTP-20137 Aux Id: [PR-11110]
+
+[PR-11110]: https://github.com/erlang/otp/pull/11110
+
+## Ssh 5.2.11.10
+
+### Fixed Bugs and Malfunctions
+
+- DH key exchange now enforces strict bounds (1 < e/f < p-1, 1 < K < p-1) on all paths, matching OpenSSH and Go. No interop impact.
+
+  Own Id: OTP-20229 Aux Id: [PR-11303]
+
+- Validate DH group parameters (P, G) received from the server during DH-GEX key exchange. The client now rejects groups where P is smaller than 2048 bits or G is not in the range (1, P-1). The default minimum in dh_gex_limits has been raised to 2048 on both client and server.
+
+  Own Id: OTP-20258 Aux Id: ERIERL-1341, [PR-11369]
+
+[PR-11303]: https://github.com/erlang/otp/pull/11303
+[PR-11369]: https://github.com/erlang/otp/pull/11369
+
+## Ssh 5.2.11.9
+
+### Fixed Bugs and Malfunctions
+
+- Fixed a path-existence oracle in the SFTP server where `SSH_FXP_REALPATH` requests with `..` components could bypass the configured root directory isolation, allowing an authenticated client to determine whether arbitrary paths exist on the host filesystem.
+
+  Own Id: OTP-20183 Aux Id: [CVE-2026-53422], GHSA-h9pw-h5w4-h976, [PR-11294]
+
+- Fixed an infinite loop in the SFTP server triggered when receiving `SSH_MSG_CHANNEL_EXTENDED_DATA` on an SFTP channel, which caused the channel process to spin indefinitely on CPU without consuming its message queue.
+
+  Own Id: OTP-20186 Aux Id: [CVE-2026-54886], GHSA-7wp4-pc27-2vj9, [PR-11295]
+
+- The SFTP server now caps the read length in `SSH_FXP_READ` requests to 255 KiB (matching OpenSSH's `SFTP_MAX_READ_LENGTH`), preventing excessive memory allocation when clients request large reads.
+
+  Own Id: OTP-20200 Aux Id: [PR-11259]
+
+- Removed a server-side workaround (OTP-14827, introduced in OTP 20) that accepted SHA-1 user-auth signatures from clients identifying as OpenSSH 7.x when rsa-sha2-* was negotiated. The workaround addressed a distro-specific build issue in 2017 that no longer exists. Clients affected by this removal (extremely unlikely — requires a 10-year-old unpatched OpenSSH build) will see authentication failures and must upgrade.
+
+  Own Id: OTP-20206 Aux Id: [PR-11268]
+
+[CVE-2026-53422]: https://nvd.nist.gov/vuln/detail/2026-53422
+[PR-11294]: https://github.com/erlang/otp/pull/11294
+[CVE-2026-54886]: https://nvd.nist.gov/vuln/detail/2026-54886
+[PR-11295]: https://github.com/erlang/otp/pull/11295
+[PR-11259]: https://github.com/erlang/otp/pull/11259
+[PR-11268]: https://github.com/erlang/otp/pull/11268
+
+## Ssh 5.2.11.8
+
+### Fixed Bugs and Malfunctions
+
+- Fixed SSH_FXP_READLINK handler in ssh_sftpd to strip the backend root prefix from symlink targets before returning them to the client, preventing disclosure of the server's absolute filesystem path when the root option is configured.
+
+  Own Id: OTP-20162 Aux Id: [CVE-2026-48855], GHSA-pv7g-pjrq-x2fh, [PR-11192]
+
+[CVE-2026-48855]: https://nvd.nist.gov/vuln/detail/2026-48855
+[PR-11192]: https://github.com/erlang/otp/pull/11192
 
 ## Ssh 5.2.11.7
 

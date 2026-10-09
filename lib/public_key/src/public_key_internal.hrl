@@ -3,7 +3,7 @@
 %%
 %% SPDX-License-Identifier: Apache-2.0
 %%
-%% Copyright Ericsson AB 2008-2025. All Rights Reserved.
+%% Copyright Ericsson AB 2008-2026. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -38,6 +38,8 @@
 -undef('nistAlgorithms').
 -undef('sigAlgs').
 -include("X509-ML-DSA-2025.hrl").
+-undef('nistAlgorithms').
+-include("X509-ML-KEM-2025.hrl").
 
 %%  Bug in ASN.1 compiler  (hardcode the correct value)
 -undef('rSASSA-PSS-Default-Identifier').
@@ -82,6 +84,8 @@
 -record(path_validation_state,
         {
          valid_policy_tree,
+         %% Monotonic count of nodes ever added to policy tree (never decremented by pruning).
+         policy_tree_node_count = 1 :: non_neg_integer(),
          user_initial_policy_set,
          explicit_policy,
          inhibit_any_policy,
@@ -149,6 +153,22 @@
         {
          algorithm :: crypto:mldsa(),
          key       :: binary()
+        }).
+
+%%%
+%%% ML-KEM
+%%%
+-record('ML-KEMPrivateKey',
+        {
+         algorithm :: crypto:kem(),
+         seed = <<>> :: binary(),
+         expandedkey = <<>> :: binary()
+        }).
+
+-record('ML-KEMPublicKey',
+        {
+         algorithm :: crypto:kem(),
+         key  :: binary()
         }).
 
 %%

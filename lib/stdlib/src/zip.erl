@@ -3,7 +3,7 @@
 %%
 %% SPDX-License-Identifier: Apache-2.0
 %%
-%% Copyright Ericsson AB 2006-2025. All Rights Reserved.
+%% Copyright Ericsson AB 2006-2026. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -1784,7 +1784,7 @@ do_openzip_get(F, #openzip{files = Files, in = In0, input = Input,
 	    In1 = Input({seek, bof, Offset}, In0),
 	    case get_z_file(In1, Z, Input, Output, [], fun silent/1,
 			    CWD, ZFile, fun all/1, false, ExtraOpts) of
-		{file, R, _In2} -> {ok, R};
+                {file, R, _In2} -> {ok, Output(flush, R)};
 		_ -> throw(file_not_found)
 	    end;
 	_ -> throw(file_not_found)
@@ -2366,27 +2366,54 @@ check_valid_location(CWD, FileName) ->
                     end,
     %% check for directory traversal exploit
     {IsValid, Name} =
-        case check_dir_level(filename:split(FileName), 0) of
-            {FileOrDir,Level} when Level < 0 ->
+        case check_dir_level(FileName) of
+            {FileOrDir, invalid} ->
                 CWD1 = if CWD == "" -> "./";
                           true      -> CWD
                        end,
                 error_logger:format("Illegal path: ~ts, extracting in ~ts~n",
                                     [add_cwd(CWD,FileName),CWD1]),
                 {false, FileOrDir};
-            _ ->
+            {_FileOrDir, valid} ->
                 {true, FileName}
         end,
     {IsValid, string:trim(Name, trailing, "/") ++ TrailingSlash}.
 
-check_dir_level([FileOrDir], Level) ->
-    {FileOrDir,Level};
-check_dir_level(["." | Parts], Level) ->
-    check_dir_level(Parts, Level);
-check_dir_level([".." | Parts], Level) ->
-    check_dir_level(Parts, Level-1);
-check_dir_level([_Dir | Parts], Level) ->
-    check_dir_level(Parts, Level+1).
+check_dir_level(FileName) ->
+    %% Normalize the path by rejecting `.`. If we have an invalid path like
+    %% "../hello/.", we will then present it to the filter as "hello".
+    %%
+    %% Note that "." is returned as-is for quirks-compatibility.
+    Parts = [Component || Component <- filename:split(FileName),
+             not string:equal(Component, ".")],
+    case Parts of
+        [_|_] ->
+            try cdl_1(Parts, 0) of
+                Res -> Res
+            catch
+                error:_ -> error({invalid_filename, FileName})
+            end;
+        [] ->
+            {".", invalid}
+    end.
+
+cdl_1([".." | Parts], Level) ->
+    case Level > 0 of
+        true ->
+            cdl_1(Parts, Level - 1);
+        false ->
+            %% We must never return ".." when marked invalid since there's no
+            %% way that the filter can do anything sensible with it. It's
+            %% better to crash.
+            Last = lists:last(Parts),
+            false = string:equal(Last, ".."),
+            {Last, invalid}
+    end;
+cdl_1([FileOrDir], Level) ->
+    true = Level >= 0,                          %Assertion.
+    {FileOrDir, valid};
+cdl_1([_Dir | Parts], Level) ->
+    cdl_1(Parts, Level + 1).
 
 get_filename_extra(FileNameLen, ExtraLen, B, GPFlag) ->
     try
@@ -2506,18 +2533,18 @@ file_header_ctime_to_datetime(FH) ->
 dos_date_time_to_datetime(DosDate, DosTime) ->
     <<Hour:5, Min:6, DoubleSec:5>> = <<DosTime:16>>,
     <<YearFrom1980:7, Month:4, Day:5>> = <<DosDate:16>>,
-
-    Datetime = {{YearFrom1980+1980, Month, Day},
-                {Hour, Min, DoubleSec * 2}},
+    Date = {YearFrom1980+1980, Month, Day},
     if DoubleSec > 29 ->
             %% If DoubleSec * 2 > 59, something is broken
             %% with this archive, but unzip wraps the value
             %% so we do the same by converting to greg seconds
             %% and then back again.
-            calendar:gregorian_seconds_to_datetime(
-              calendar:datetime_to_gregorian_seconds(Datetime));
+            Datetime0 = {Date, {Hour, Min, 0}},
+            GSec0 = calendar:datetime_to_gregorian_seconds(Datetime0),
+            GSec = GSec0 + DoubleSec * 2,
+            calendar:gregorian_seconds_to_datetime(GSec);
        true ->
-            Datetime
+            {Date, {Hour, Min, DoubleSec * 2}}
     end.
 
 dos_date_time_from_datetime({{Year, _Month, _Day}, {_Hour, _Min, _Sec}}) when Year < 1980 ->

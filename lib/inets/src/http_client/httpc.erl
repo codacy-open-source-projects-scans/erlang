@@ -228,7 +228,9 @@ request(Url, Profile) ->
                         | {headers_as_is, boolean()}
                         | {socket_opts, [SocketOpt]}
                         | {receiver, Receiver}
-                        | {ipv6_host_with_brackets, boolean()},
+                        | {ipv6_host_with_brackets, boolean()}
+                        | {max_header_size, MaxSize}
+                        | {max_body_size, MaxSize},
       StreamTo :: none | self | {self, once} | file:name_all(),
       SocketOpt :: term(),
       BodyFormat  :: string | binary,
@@ -237,6 +239,7 @@ request(Url, Profile) ->
                   | { ReceiverModule::atom()
                     , ReceiverFunction::atom()
                     , ReceiverArgs::list()},
+      MaxSize :: non_neg_integer() | nolimit,
       Result :: { StatusLine , [HttpHeader], HttpBodyResult}
               | { StatusCode, HttpBodyResult}
               | RequestId
@@ -266,7 +269,7 @@ When `Profile` is `stand_alone` only the pid can be used.
 
 HTTP options:
 
-- **`timeout`** - Time-out time for the request.
+- [](){: #opt_timeout } **`timeout`** - Time-out time for the request.
 
   The clock starts ticking when the request is sent.
 
@@ -274,20 +277,20 @@ HTTP options:
 
   Default is `infinity`.
 
-- **`connect_timeout`** - Connection time-out time, used during the initial
+- [](){: #opt_connect_timeout } **`connect_timeout`** - Connection time-out time, used during the initial
   request, when the client is _connecting_ to the server.
 
   Time is in milliseconds.
 
   Default is the value of option `timeout`.
 
-- **`ssl`** - This is the `SSL/TLS` connecting configuration option.
+- [](){: #opt_ssl } **`ssl`** - This is the `SSL/TLS` connecting configuration option.
 
   Default value is obtained by calling
   [`httpc:ssl_verify_host_options(true)`. ](`ssl_verify_host_options/1`). See
   [ssl:connect/2,3,4](`m:ssl`) for available options.
 
-- **`autoredirect`** - The client automatically retrieves the information from
+- [](){: #opt_autoredirect } **`autoredirect`** - The client automatically retrieves the information from
   the new URI and returns that as the result, instead of a 30X-result code.
 
   For some 30X-result codes, automatic redirect is not allowed. In these cases
@@ -295,7 +298,7 @@ HTTP options:
 
   Default is `true`.
 
-- **`autoretry`** - The client automatically retries the request **once** after receiving
+- [](){: #opt_autoretry } **`autoretry`** - The client automatically retries the request **once** after receiving
   a Retry-After header from the server.
 
   Sometimes servers can suggest a value that is not suitable for application,
@@ -307,28 +310,28 @@ HTTP options:
 
   Since OTP 28.4
 
-- **`proxy_auth`** - A proxy-authorization header using a tuple where the first
+- [](){: #opt_proxy_auth } **`proxy_auth`** - A proxy-authorization header using a tuple where the first
   element is the `username` and the second element of the tuple is the
   `password` added to the request.
 
-- **`version`** - Can be used to make the client act as an `HTTP/1.0` client. By
+- [](){: #opt_version } **`version`** - Can be used to make the client act as an `HTTP/1.0` client. By
   default this is an `HTTP/1.1` client. When using `HTTP/1.0` persistent
   connections are not used.
 
   Default is the string `"HTTP/1.1"`.
 
-- **`relaxed`** - If set to `true`, workarounds for known server deviations from
+- [](){: #opt_relaxed } **`relaxed`** - If set to `true`, workarounds for known server deviations from
   the HTTP-standard are enabled.
 
   Default is `false`.
 
 Options details:
 
-- **`sync`** - Option for the request to be synchronous or asynchronous.
+- [](){: #opt_sync } **`sync`** - Option for the request to be synchronous or asynchronous.
 
   Default is `true`.
 
-- **`stream`** - Streams the body of a 200 or 206 response to the calling
+- [](){: #opt_stream } **`stream`** - Streams the body of a 200 or 206 response to the calling
   process or to a file. When streaming to the calling process using option
   `self`, the following stream messages are sent to that process:
   `{http, {RequestId, stream_start, Headers}}, {http, {RequestId, stream, BinBodyPart}}, and {http, {RequestId, stream_end, Headers}}`.
@@ -346,18 +349,18 @@ Options details:
 
   Default is `none`.
 
-- **`body_format`** - Defines if the body is to be delivered as a string or
+- [](){: #opt_body_format } **`body_format`** - Defines if the body is to be delivered as a string or
   binary. This option is only valid for the synchronous request.
 
   Default is `string`. Asynchronous requests always use `binary`.
 
-- **`full_result`** - Defines if a "full result" is to be returned to the caller
+- [](){: #opt_full_result } **`full_result`** - Defines if a "full result" is to be returned to the caller
   (that is, the body, the headers, and the entire status line) or not (the body
   and the status code).
 
   Default is `true`.
 
-- **`headers_as_is`** - Defines if the headers provided by the user are to be
+- [](){: #opt_headers_as_is } **`headers_as_is`** - Defines if the headers provided by the user are to be
   made lower case or to be regarded as case sensitive.
 
   The HTTP standard requires them to be case insensitive. Use this feature only
@@ -367,7 +370,7 @@ Options details:
 
   Default is `false`.
 
-- **`socket_opts`** - Socket options to be used for this request.
+- [](){: #opt_socket_opts } **`socket_opts`** - Socket options to be used for this request.
 
   See the options used by `m:gen_tcp` and `m:ssl`
 
@@ -387,7 +390,7 @@ Options details:
   By default the socket options set by function
   [set_options/1,2](`set_options/1`) are used when establishing a connection.
 
-- **`receiver`** - Defines how the client delivers the result of an asynchronous
+- [](){: #opt_receiver } **`receiver`** - Defines how the client delivers the result of an asynchronous
   request (`sync` has the value `false`).
 
   - **`t:pid/0`** - Messages are sent to this process in the format
@@ -424,6 +427,28 @@ Options details:
   (`true`) or stripped (`false`).
 
   Default is `false`.
+
+  [](){: #opt_max_header_size }
+
+- **`max_header_size`** - Maximum total number of bytes allowed for the response
+  headers (cumulative across all header lines). If the server sends headers
+  exceeding this limit, the request fails with
+  `{error, {header_too_long, {max, MaxSize}}}`.
+
+  The atom `nolimit` disables the check (not recommended).
+
+  Default is `10240` (same as the [`max_header_size`](`m:httpd#prop_max_header_size`)
+  configuration for `httpd`).
+
+  [](){: #opt_max_body_size }
+
+- **`max_body_size`** - Maximum number of bytes allowed for the response body.
+  If the `Content-Length` of the response exceeds this limit, the request fails
+  with `{error, body_too_big}`.
+
+  The atom `nolimit` disables the check.
+
+  Default is `nolimit`.
 """.
 -doc(#{since => <<"OTP R13B04">>}).
 -spec request(Method, Request, HttpOptions, Options, Profile) -> {ok, Result} | {error, term()} when
@@ -460,7 +485,9 @@ Options details:
                      | {headers_as_is, boolean()}
                      | {socket_opts, [SocketOpt]}
                      | {receiver, Receiver}
-                     | {ipv6_host_with_brackets, boolean()},
+                     | {ipv6_host_with_brackets, boolean()}
+                     | {max_header_size, MaxSize}
+                     | {max_body_size, MaxSize},
       StreamTo :: none | self | {self, once} | file:name_all(),
       BodyFormat  :: string | binary,
       SocketOpt :: term(),
@@ -469,6 +496,7 @@ Options details:
                   | { ReceiverModule::atom()
                     , ReceiverFunction::atom()
                     , ReceiverArgs::list()},
+      MaxSize :: non_neg_integer() | nolimit,
       Profile :: atom() | pid(),
       HttpVersion :: string(),
       Result :: {StatusLine
@@ -614,28 +642,28 @@ Sets options to be used for subsequent requests.
   `{undefined, []}`, that is, no proxy is configured and `https_proxy` defaults
   to the value of `proxy`.
 
-- **`MaxConnectionsOpen`** - `MaxConnectionsOpen` Maximum number of handlers that can be
+- [](){: #opt_max_connections_open } **`MaxConnectionsOpen`** - `MaxConnectionsOpen` Maximum number of handlers that can be
   opened at the same time. Default is `infinity` which means that it's not limited.
 
-- **`MaxSessions`** - `MaxSessions` Maximum number of persistent connections to
+- [](){: #opt_max_sessions } **`MaxSessions`** - `MaxSessions` Maximum number of persistent connections to
   a host. Default is `2`.
 
-- **`MaxKeepAlive`** - `MaxKeepAlive` Maximum number of outstanding requests on
+- [](){: #opt_max_keep_alive_length } **`MaxKeepAlive`** - `MaxKeepAlive` Maximum number of outstanding requests on
   the same connection to a host. Default is `5`.
 
-- **`KeepAliveTimeout`** - `KeepAliveTimeout` If a persistent connection is idle
+- [](){: #opt_keep_alive_timeout } **`KeepAliveTimeout`** - `KeepAliveTimeout` If a persistent connection is idle
   longer than the `keep_alive_timeout` in milliseconds, the client closes the
   connection. The server can also have such a time-out but do not take that for
   granted. Default is `120000` (= 2 min).
 
-- **`MaxPipeline`** - `MaxPipeline` Maximum number of outstanding requests on a
+- [](){: #opt_max_pipeline_length } **`MaxPipeline`** - `MaxPipeline` Maximum number of outstanding requests on a
   pipelined connection to a host. Default is `2`.
 
-- **`PipelineTimeout`** - `PipelineTimeout` If a persistent connection is idle
+- [](){: #opt_pipeline_timeout } **`PipelineTimeout`** - `PipelineTimeout` If a persistent connection is idle
   longer than the `pipeline_timeout` in milliseconds, the client closes the
   connection. Default is `0`, which results in pipelining not being used.
 
-- **`CookieMode`** - If cookies are enabled, all valid cookies are automatically
+- [](){: #opt_cookies } **`CookieMode`** - If cookies are enabled, all valid cookies are automatically
   saved in the cookie database of the client manager. If option `verify` is
   used, function [`store_cookies/2`](`store_cookies/2`) has to be called for the
   cookies to be saved. Default is `disabled`.
@@ -658,7 +686,7 @@ Sets options to be used for subsequent requests.
 
   See the options used by `m:gen_tcp` and `m:ssl`
 
-- **`VerboseMode`** - Default is `false`. This option is used to switch on (or
+- [](){: #opt_verbose } **`VerboseMode`** - Default is `false`. This option is used to switch on (or
   off) different levels of Erlang trace on the client. It is a debug feature.
 
 - **`Profile`** - When started `stand_alone` only the pid can be used.
@@ -1355,7 +1383,9 @@ maybe_format_body(BinBody, Options) ->
                         | {headers_as_is, boolean()}
                         | {socket_opts, [SocketOpt]}
                         | {receiver, Receiver}
-                        | {ipv6_host_with_brackets, boolean()},
+                        | {ipv6_host_with_brackets, boolean()}
+                        | {max_header_size,         MaxSize}
+                        | {max_body_size,           MaxSize},
       BodyFormat  :: string | binary,
       StreamTo :: none | self | {self, once} | file:name_all(),
       SocketOpt :: term(),
@@ -1363,7 +1393,8 @@ maybe_format_body(BinBody, Options) ->
                   | fun((term()) -> term())
                   | { ReceiverModule::atom()
                     , ReceiverFunction::atom()
-                    , ReceiverArgs::list()}.
+                    , ReceiverArgs::list()},
+      MaxSize :: non_neg_integer() | nolimit.
 %% This options is a workaround for http servers that do not follow the 
 %% http standard and have case sensitive header parsing. Should only be
 %% used if there is no other way to communicate with the server or for
@@ -1558,16 +1589,26 @@ request_options_defaults() ->
 
     VerifyBrackets = VerifyBoolean,
 
+    VerifyIntegerNoLimit =
+        fun(nolimit) ->
+                ok;
+           (Value) when
+                  is_integer(Value), Value > 0 ->
+                ok
+        end,
+
     [
-     {sync,                    true,      VerifySync}, 
-     {stream,                  none,      VerifyStream},
-     {body_format,             string,    VerifyBodyFormat},
-     {full_result,             true,      VerifyFullResult},
-     {headers_as_is,           false,     VerifyHeaderAsIs},
-     {receiver,                alias(),    VerifyReceiver},
-     {socket_opts,             undefined, VerifySocketOpts},
-     {ipv6_host_with_brackets, false,     VerifyBrackets}
-    ]. 
+     {sync,                    true,                       VerifySync},
+     {stream,                  none,                       VerifyStream},
+     {body_format,             string,                     VerifyBodyFormat},
+     {full_result,             true,                       VerifyFullResult},
+     {headers_as_is,           false,                      VerifyHeaderAsIs},
+     {receiver,                alias(),                    VerifyReceiver},
+     {socket_opts,             undefined,                  VerifySocketOpts},
+     {ipv6_host_with_brackets, false,                      VerifyBrackets},
+     {max_header_size,         ?HTTP_MAX_HEADER_SIZE,      VerifyIntegerNoLimit},
+     {max_body_size,           ?HTTP_MAX_BODY_SIZE,        VerifyIntegerNoLimit}
+    ].
 
 request_options(Options) ->
     Defaults = request_options_defaults(), 
@@ -1613,7 +1654,9 @@ request_options([{Key, DefaultVal, Verify} | Defaults], Options, Acc) ->
                      | {headers_as_is, boolean()}
                      | {socket_opts, [SocketOpt]}
                      | {receiver, Receiver}
-                     | {ipv6_host_with_brackets, boolean()},
+                     | {ipv6_host_with_brackets, boolean()}
+                     | {max_header_size, MaxSize}
+                     | {max_body_size, MaxSize},
       StreamTo :: none | self | {self, once} | file:name_all(),
       BodyFormat  :: string | binary,
       SocketOpt :: term(),
@@ -1622,7 +1665,8 @@ request_options([{Key, DefaultVal, Verify} | Defaults], Options, Acc) ->
                   | fun((term()) -> term())
                   | { ReceiverModule::atom()
                     , ReceiverFunction::atom()
-                    , ReceiverArgs::list()}.
+                    , ReceiverArgs::list()},
+      MaxSize :: non_neg_integer() | nolimit.
 request_options_sanity_check(Opts) ->
     case proplists:get_value(sync, Opts) of
 	Sync when (Sync =:= true) ->

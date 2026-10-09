@@ -311,7 +311,8 @@ all() ->
               {options,                "ESOCK_TEST_API_OPTS",     include},
               {operation_with_timeout, "ESOCK_TEST_API_OPWTO",    include}
              ],
-    [use_group(Group, Env, Default) || {Group, Env, Default} <- Groups].
+    [Spec || {Group, Env, Default} <- Groups,
+             Spec <- use_group(Group, Env, Default)].
 
 use_group(_Group, undefined, exclude) ->
     [];
@@ -1605,12 +1606,12 @@ do_api_b_open_and_maybe_close_raw(InitState) ->
                            end
                    end},
          #{desc => "close socket",
-           cmd  => fun(#{socket := Sock} = State) ->
+           cmd  => fun(#{sock := Sock} = State) ->
                            ?SEV_IPRINT("try socket close"),
                            case socket:close(Sock) of
                                ok ->
                                    ?SEV_IPRINT("socket closed"),
-                                   {ok, maps:remote(sock, State)};
+                                   {ok, maps:remove(sock, State)};
                                {error, Reason} = ERROR ->
                                    ?SEV_EPRINT("close failed:"
                                                "~n   Reason: ~p", [Reason]),
@@ -5353,6 +5354,7 @@ api_ffd_open_connect_and_open_wod_and_send_tcp6(_Config) when is_list(_Config) -
 api_ffd_open_connect_and_open_wd_and_send_tcp4(_Config) when is_list(_Config) ->
     ?TT(?SECS(5)),
     tc_try(api_ffd_open_connect_and_open_wd_and_send_tcp4,
+           fun() -> has_support_ipv4() end,
            fun() ->
                    InitState = #{domain   => inet,
                                  type     => stream,
@@ -20582,7 +20584,8 @@ api_opt_ip_recvtos_udp(InitState) ->
 
          #{desc => "extract the (expected) recvtos \"default\" value",
            cmd  => fun(#{sock_dst := Sock} = State) ->
-                           {ok, DefValue} = socket:getopt(Sock, ip, tos),
+                           {ok, #{tos := DefValue}} =
+                               socket:getopt(Sock, ip, tos),
                            ?SEV_IPRINT("(expected) recvtos def value: ~w",
                                        [DefValue]),
                            {ok, State#{dst_def_value => DefValue}}
@@ -20608,7 +20611,7 @@ api_opt_ip_recvtos_udp(InitState) ->
                            case Recv(Sock) of
                                {ok, {Src, [#{level := ip,
                                              type  := TOS,
-                                             value := DefValue}], ?BASIC_REQ}}
+                                             value := #{tos := DefValue}}], ?BASIC_REQ}}
                                  when (TOS =:= tos) orelse
                                       (TOS =:= recvtos) ->
                                    ?SEV_IPRINT("got default TOS (~w) "
@@ -20645,10 +20648,13 @@ api_opt_ip_recvtos_udp(InitState) ->
 
          #{desc => "set tos = reliability on src sock",
            cmd  => fun(#{sock_src := Sock}) ->
-                           ok = socket:setopt(Sock, ip, tos, reliability)
+                           ok = socket:setopt(Sock,
+                                              ip, tos,
+                                              #{precedence => routine,
+                                                tos        => throughput})
                    end},
 
-         #{desc => "send req (to dst) (w tos = mincost)",
+         #{desc => "send req (to dst) (w tos = throughput)",
            cmd  => fun(#{sock_src := Sock, sa_dst := Dst, send := Send}) ->
                            Send(Sock, ?BASIC_REQ, Dst, default)
                    end},
@@ -20657,7 +20663,7 @@ api_opt_ip_recvtos_udp(InitState) ->
                            case Recv(Sock) of
                                {ok, {Src, [#{level := ip,
                                              type  := TOS,
-                                             value := reliability = TOSData}],
+                                             value := #{tos := #{tos := throughput = TOSData}}}],
                                      ?BASIC_REQ}} 
                                  when ((TOS =:= tos) orelse (TOS =:= recvtos)) ->
                                    ?SEV_IPRINT("got expected TOS (~w) = ~w "
@@ -21243,13 +21249,15 @@ api_opt_ip_tos_udp(InitState) ->
                            end
                    end},
 
+         %% The default value for TOS is usually 'default', but on FreeBSD...
          #{desc => "get default tos",
            cmd  => fun(#{sock := Sock, get := Get} = _State) ->
                            case Get(Sock) of
-                               {ok, 0 = Value} ->
-                                   ?SEV_IPRINT("expected default tos: ~p", [Value]),
+                               {ok, #{native := 0} = Value} ->
+                                   ?SEV_IPRINT("expected default tos: ~p",
+                                               [Value]),
                                    ok;
-                               {ok, Value} ->
+                               {ok, #{tos := #{tos := Value}}} ->
                                    %% On FreeBSD 14 & 15 default value is not 0!
                                    case os:type() of
                                        {unix, freebsd} ->
@@ -21280,6 +21288,7 @@ api_opt_ip_tos_udp(InitState) ->
                            end
                    end},
 
+         %% 'mincost' does not exist on all platforms
          %% #{desc => "set tos " ++ TOS1Str,
          %%   cmd  => fun(#{sock := Sock, set := Set} = _State) ->
          %%                   socket:setopt(Sock, otp, debug, true),
@@ -21327,7 +21336,7 @@ api_opt_ip_tos_udp(InitState) ->
          #{desc => "get tos (expect " ++ TOS2Str ++ ")",
            cmd  => fun(#{sock := Sock, get := Get} = _State) ->
                            case Get(Sock) of
-                               {ok, TOS2 = Value} ->
+                               {ok, #{tos := #{tos := TOS2 = Value}}} ->
                                    ?SEV_IPRINT("expected tos (~p)", [Value]),
                                    ok;
                                {ok, Unexpected} ->
@@ -21356,7 +21365,7 @@ api_opt_ip_tos_udp(InitState) ->
          #{desc => "get tos (expect " ++ TOS3Str ++ ")",
            cmd  => fun(#{sock := Sock, get := Get} = _State) ->
                            case Get(Sock) of
-                               {ok, TOS3 = Value} ->
+                               {ok, #{tos := #{tos := TOS3 = Value}}} ->
                                    ?SEV_IPRINT("expected tos (~p)", [Value]),
                                    ok;
                                {ok, Unexpected} ->
@@ -21385,7 +21394,7 @@ api_opt_ip_tos_udp(InitState) ->
          #{desc => "get tos (expect " ++ TOS4Str ++ ")",
            cmd  => fun(#{sock := Sock, get := Get} = _State) ->
                            case Get(Sock) of
-                               {ok, TOS4 = Value} ->
+                               {ok, #{tos := #{tos := TOS4 = Value}}} ->
                                    ?SEV_IPRINT("expected tos (~p)", [Value]),
                                    ok;
                                {ok, Unexpected} ->
@@ -21414,7 +21423,7 @@ api_opt_ip_tos_udp(InitState) ->
          #{desc => "get tos (expect " ++ TOS5Str ++ ")",
            cmd  => fun(#{sock := Sock, get := Get} = _State) ->
                            case Get(Sock) of
-                               {ok, TOS5 = Value} ->
+                               {ok, #{native := TOS5 = Value}} ->
                                    ?SEV_IPRINT("expected tos (~p)", [Value]),
                                    ok;
                                {ok, Unexpected} ->
@@ -26998,6 +27007,9 @@ sock_close(Sock) ->
     try socket:close(Sock) of
         ok ->
             ok;
+        {error, closed} ->
+            i("sock_close -> already closed"),
+            ok;
         {error, Reason} ->
             i("sock_close -> error: ~p", [Reason]),
             ?FAIL({close, Reason})
@@ -27451,8 +27463,8 @@ api_opt_sock_timestampns_udp(InitState) ->
                    end},
          #{desc => "close sockets",
            cmd  => fun(#{sock_src := Src, sock_dst := Dst}) ->
-                           (catch socket:close(Src)),
-                           (catch socket:close(Dst)),
+                           ?CATCH_AND_IGNORE( socket:close(Src) ),
+                           ?CATCH_AND_IGNORE( socket:close(Dst) ),
                            ok
                    end},
          ?SEV_FINISH_NORMAL

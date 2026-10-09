@@ -67,7 +67,8 @@
          prop_to_orddict/1, prop_from_orddict/1, prop_map/1,
          prop_foldl/1, prop_foldr/1, prop_shift/1, prop_slice/1,
          prop_append_prepend/1, prop_concat/1, prop_mapfoldl/1, prop_mapfoldr/1,
-         prop_sparse_mapfoldl/1, prop_sparse_mapfoldr/1
+         prop_sparse_mapfoldl/1, prop_sparse_mapfoldr/1,
+         array_eqc_test/1
         ]).
 
 
@@ -112,7 +113,8 @@ groups() ->
        prop_to_orddict, prop_from_orddict, prop_map,
        prop_foldl, prop_foldr, prop_shift, prop_slice,
        prop_append_prepend, prop_concat, prop_mapfoldl, prop_mapfoldr,
-       prop_sparse_mapfoldl, prop_sparse_mapfoldr]}].
+       prop_sparse_mapfoldl, prop_sparse_mapfoldr,
+       array_eqc_test]}].
 
 init_per_suite(Config0) ->
     case ct_property_test:init_per_suite(Config0) of
@@ -544,17 +546,18 @@ shift_test(_Config) ->
     ].
 
 slice_test(_Config) ->
+    TestArray = fix(from_list(lists:seq(1,?LEAFSIZE))),
     [
-     ?assertEqual(lists:seq(1,?LEAFSIZE), to_list(slice(0, ?LEAFSIZE, fix(from_list(lists:seq(1,?LEAFSIZE)))))),
-     ?assertEqual(lists:seq(2,?LEAFSIZE), to_list(slice(1, ?LEAFSIZE-1, fix(from_list(lists:seq(1,?LEAFSIZE)))))),
-     ?assertEqual(lists:seq(3,?LEAFSIZE), to_list(slice(2, ?LEAFSIZE-2, fix(from_list(lists:seq(1,?LEAFSIZE)))))),
-     ?assertEqual(lists:seq(1,?LEAFSIZE-1), to_list(slice(0, ?LEAFSIZE-1, fix(from_list(lists:seq(1,?LEAFSIZE)))))),
-     ?assertEqual(lists:seq(1,?LEAFSIZE-2), to_list(slice(0, ?LEAFSIZE-2, fix(from_list(lists:seq(1,?LEAFSIZE)))))),
-     ?assertEqual(lists:seq(4,?LEAFSIZE-3), to_list(slice(3, ?LEAFSIZE-6, fix(from_list(lists:seq(1,?LEAFSIZE)))))),
-     ?assertEqual([4], to_list(slice(3, 1, fix(from_list(lists:seq(1,?LEAFSIZE)))))),
-     ?assertEqual([], to_list(slice(3, 0, fix(from_list(lists:seq(1,?LEAFSIZE)))))),
-     ?assertEqual([], to_list(slice(0, -1, fix(from_list(lists:seq(1,?LEAFSIZE)))))),
-     ?assertError(badarg, to_list(slice(-1, 3, fix(from_list(lists:seq(1,?LEAFSIZE))))))
+     ?assertEqual(lists:seq(1,?LEAFSIZE), to_list(slice(0, ?LEAFSIZE, TestArray))),
+     ?assertEqual(lists:seq(2,?LEAFSIZE), to_list(slice(1, ?LEAFSIZE-1, TestArray))),
+     ?assertEqual(lists:seq(3,?LEAFSIZE), to_list(slice(2, ?LEAFSIZE-2, TestArray))),
+     ?assertEqual(lists:seq(1,?LEAFSIZE-1), to_list(slice(0, ?LEAFSIZE-1, TestArray))),
+     ?assertEqual(lists:seq(1,?LEAFSIZE-2), to_list(slice(0, ?LEAFSIZE-2, TestArray))),
+     ?assertEqual(lists:seq(4,?LEAFSIZE-3), to_list(slice(3, ?LEAFSIZE-6, TestArray))),
+     ?assertEqual([4], to_list(slice(3, 1, TestArray))),
+     ?assertEqual([], to_list(slice(3, 0, TestArray))),
+     ?assertError(badarg, slice(0, -1, TestArray)),
+     ?assertError(badarg, slice(-1, 3, TestArray))
     ].
 
 prepend_test(_Config) ->
@@ -1008,9 +1011,6 @@ doctests(Config) when is_list(Config) ->
                                {missing_tests,
                                 [{foldr, 3},
                                  {foldr, 5},
-                                 {from, 2},
-                                 {from_list, 1},
-                                 {from_orddict, 1},
                                  {mapfoldl, 5},
                                  {mapfoldr, 3},
                                  {mapfoldr, 5},
@@ -1104,6 +1104,17 @@ prop_sparse_mapfoldl(Config) ->
 
 prop_sparse_mapfoldr(Config) ->
     do_proptest(prop_sparse_mapfoldr, Config).
+
+%% The stateful array_eqc model uses the grouped eqc_statem component
+%% which only QuickCheck supports. Skip for other tools.
+array_eqc_test(Config) ->
+    case proplists:get_value(property_test_tool, Config) of
+        eqc ->
+            ct_property_test:quickcheck(array_eqc:prop_array(1000), Config);
+        Tool ->
+            {skip, io_lib:format("array_eqc requires QuickCheck (eqc), "
+                                 "found ~p", [Tool])}
+    end.
 
 do_proptest(Prop, Config) ->
     ct_property_test:quickcheck(

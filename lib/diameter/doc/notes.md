@@ -3,7 +3,7 @@
 
 SPDX-License-Identifier: Apache-2.0
 
-Copyright Ericsson AB 2023-2025. All Rights Reserved.
+Copyright Ericsson AB 2023-2026. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,6 +22,86 @@ limitations under the License.
 # Release Notes
 
 Releases are listed in reverse chronological order, most recent first.
+
+## diameter 2.7.2
+
+### Fixed Bugs and Malfunctions
+
+- Fix infinite loop in `diameter_dist:route_session/2` when avp other than `Session-Id` has zero length.
+
+  Own Id: OTP-20242 Aux Id: [PR-11331]
+
+- Fix crash in `diameter_dist:route_session/2` when `Session-Id` (code: 263) avp has zero length.
+
+  Own Id: OTP-20243 Aux Id: [PR-11333]
+
+[PR-11331]: https://github.com/erlang/otp/pull/11331
+[PR-11333]: https://github.com/erlang/otp/pull/11333
+
+## diameter 2.7.1
+
+### Fixed Bugs and Malfunctions
+
+- Fixed return value documentation of `diameter:service_info(SvcName, statistics)`
+
+  Own Id: OTP-20150 Aux Id: [GH-11105], [PR-11146]
+
+[GH-11105]: https://github.com/erlang/otp/issues/11105
+[PR-11146]: https://github.com/erlang/otp/pull/11146
+
+## diameter 2.7
+
+### Improvements and New Features
+
+- The legacy `and` and `or` operators have been replaced with other language constructs.
+
+  Own Id: OTP-19744 Aux Id: [PR-10114], [PR-10554], [PR-10568], [PR-10579], [PR-10585], [PR-10598], [PR-10710], [PR-10718], [PR-10580], [PR-10730]
+
+- Added support for `-unsafe` attributes, which is used to mark functions as unsafe to use. 
+  
+  This is similar to but separate from deprecation, and the compiler will by default now generate warnings for calls to functions in Erlang/OTP that are known to be always unsafe.
+  
+  Furthermore, `m:xref` can now be used to find calls to functions in another application that lack a `-doc` attribute (`undocumented_function_calls`), calls to functions in another application marked `-doc false.` (`private_function_calls`), as well as calls to unsafe functions (`unsafe_function_calls`).
+
+  Own Id: OTP-20066 Aux Id: [PR-10839]
+
+[PR-10114]: https://github.com/erlang/otp/pull/10114
+[PR-10554]: https://github.com/erlang/otp/pull/10554
+[PR-10568]: https://github.com/erlang/otp/pull/10568
+[PR-10579]: https://github.com/erlang/otp/pull/10579
+[PR-10585]: https://github.com/erlang/otp/pull/10585
+[PR-10598]: https://github.com/erlang/otp/pull/10598
+[PR-10710]: https://github.com/erlang/otp/pull/10710
+[PR-10718]: https://github.com/erlang/otp/pull/10718
+[PR-10580]: https://github.com/erlang/otp/pull/10580
+[PR-10730]: https://github.com/erlang/otp/pull/10730
+[PR-10839]: https://github.com/erlang/otp/pull/10839
+
+## diameter 2.6.1.2
+
+### Fixed Bugs and Malfunctions
+
+- Fix infinite loop in `diameter_dist:route_session/2` when avp other than `Session-Id` has zero length.
+
+  Own Id: OTP-20242 Aux Id: [PR-11331]
+
+- Fix crash in `diameter_dist:route_session/2` when `Session-Id` (code: 263) avp has zero length.
+
+  Own Id: OTP-20243 Aux Id: [PR-11333]
+
+[PR-11331]: https://github.com/erlang/otp/pull/11331
+[PR-11333]: https://github.com/erlang/otp/pull/11333
+
+## diameter 2.6.1.1
+
+### Fixed Bugs and Malfunctions
+
+- Fixed return value documentation of `diameter:service_info(SvcName, statistics)`
+
+  Own Id: OTP-20150 Aux Id: [GH-11105], [PR-11146]
+
+[GH-11105]: https://github.com/erlang/otp/issues/11105
+[PR-11146]: https://github.com/erlang/otp/pull/11146
 
 ## diameter 2.6.1
 
@@ -126,6 +206,32 @@ Releases are listed in reverse chronological order, most recent first.
 [PR-9079]: https://github.com/erlang/otp/pull/9079
 [PR-9670]: https://github.com/erlang/otp/pull/9670
 [PR-9786]: https://github.com/erlang/otp/pull/9786
+
+## diameter 2.4.1.3
+
+### Fixed Bugs and Malfunctions
+
+- Fix infinite loop in `diameter_dist:route_session/2` when avp other than `Session-Id` has zero length.
+
+  Own Id: OTP-20242 Aux Id: [PR-11331]
+
+- Fix crash in `diameter_dist:route_session/2` when `Session-Id` (code: 263) avp has zero length.
+
+  Own Id: OTP-20243 Aux Id: [PR-11333]
+
+[PR-11331]: https://github.com/erlang/otp/pull/11331
+[PR-11333]: https://github.com/erlang/otp/pull/11333
+
+## diameter 2.4.1.2
+
+### Fixed Bugs and Malfunctions
+
+- Fixed return value documentation of `diameter:service_info(SvcName, statistics)`
+
+  Own Id: OTP-20150 Aux Id: [GH-11105], [PR-11146]
+
+[GH-11105]: https://github.com/erlang/otp/issues/11105
+[PR-11146]: https://github.com/erlang/otp/pull/11146
 
 ## diameter 2.4.1.1
 

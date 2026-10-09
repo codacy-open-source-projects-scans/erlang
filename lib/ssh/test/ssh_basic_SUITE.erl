@@ -49,6 +49,7 @@
          basic_test/1,
          check_error/1,
          cli/1,
+         cli_exec_disabled/1,
          cli_exit_normal/1,
          cli_exit_status/1,
          close/1,
@@ -90,6 +91,7 @@
          shell/1,
          shell_disabled/1,
          shell_exit_status/1,
+         shell_latin1_exception/1,
          shell_no_unicode/1,
          shell_socket/1,
          shell_ssh_conn/1,
@@ -153,13 +155,14 @@ groups() ->
      {p_basic, [?PARALLEL], [send, parallel_login, peername_sockname,
                              exec, exec_compressed, exec_compressed_post_auth_compression,
                              exec_with_io_out, exec_with_io_in,
-                             cli, cli_exit_normal, cli_exit_status,
+                             cli, cli_exec_disabled, cli_exit_normal, cli_exit_status,
                              idle_time_client, idle_time_server,
                              max_initial_idle_time,
                              openssh_zlib_basic_test,
                              misc_ssh_options, inet_option, inet6_option,
                              shell, shell_disabled, shell_socket, shell_ssh_conn,
                              shell_no_unicode, shell_unicode_string,
+                             shell_latin1_exception,
                              close]}].
 
 %%--------------------------------------------------------------------
@@ -171,7 +174,8 @@ init_per_suite(Config) ->
                       Config
                   end).
 
-end_per_suite(_Config) ->
+end_per_suite(Config) ->
+    ssh_test_lib:clean_all_user_host_keys(Config),
     ssh:stop().
 
 %%--------------------------------------------------------------------
@@ -196,7 +200,8 @@ end_per_group(_, Config) ->
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config)
   when TestCase==shell_no_unicode;
-       TestCase==shell_unicode_string ->
+       TestCase==shell_unicode_string;
+       TestCase==shell_latin1_exception ->
     PrivDir = proplists:get_value(priv_dir, Config),
     UserDir = proplists:get_value(priv_dir, Config),
     SysDir =  proplists:get_value(data_dir, Config),
@@ -226,10 +231,11 @@ init_per_testcase(TestCase, Config) ->
 
 end_per_testcase(TestCase, Config)
   when TestCase==shell_no_unicode;
-       TestCase==shell_unicode_string ->
+       TestCase==shell_unicode_string;
+       TestCase==shell_latin1_exception ->
     case proplists:get_value(sftpd, Config) of
 	{Pid, _, _} ->
-	    catch ssh:stop_daemon(Pid),
+            try ssh:stop_daemon(Pid) catch _:_ -> ok end,
             ok;
 	_ ->
 	    ok
@@ -291,7 +297,7 @@ inet_option(Config) when is_list(Config) ->
 
 %%--------------------------------------------------------------------
 %%% Test configuring IPv6
-inet6_option() -> [{timetrap,{seconds,30}}].
+inet6_option() -> [{timetrap,{seconds,30 * ssh_test_lib:timetrap_scale()}}].
 inet6_option(Config) when is_list(Config) ->   
     SystemDir = filename:join(proplists:get_value(priv_dir, Config), system),
     UserDir = proplists:get_value(priv_dir, Config),
@@ -635,43 +641,54 @@ shell_ssh_conn(Config) when is_list(Config) ->
 
 %%--------------------------------------------------------------------
 cli(Config) when is_list(Config) ->
+    cli_helper(Config, [{exec, erlang_eval}]).
+
+%%--------------------------------------------------------------------
+%% Verify custom ssh_cli callback works with default exec=disabled
+cli_exec_disabled(Config) when is_list(Config) ->
+    cli_helper(Config, []).
+
+cli_helper(Config, ExtraOpts) ->
     process_flag(trap_exit, true),
     SystemDir = filename:join(proplists:get_value(priv_dir, Config), system),
     UserDir = proplists:get_value(priv_dir, Config),
-    
+
     TmpDir = filename:join(proplists:get_value(priv_dir,Config), "tmp"),
     ok = ssh_test_lib:del_dirs(TmpDir),
-    ok = file:make_dir(TmpDir),
+    case file:make_dir(TmpDir) of
+        ok -> ok;
+        {error, eexist} -> ok
+    end,
 
-    {_Pid, Host, Port} = ssh_test_lib:daemon([{exec, erlang_eval},
-                                              {system_dir, SystemDir},{user_dir, UserDir},
+    {_Pid, Host, Port} = ssh_test_lib:daemon(ExtraOpts ++
+                                              [{system_dir, SystemDir},{user_dir, UserDir},
                                               {password, "morot"},
                                               {ssh_cli, {ssh_test_cli, [cli,TmpDir]}},
                                               {subsystems, []},
                                               {failfun, fun ssh_test_lib:failfun/2}]),
     ct:sleep(500),
-    
+
     ConnectionRef = ssh_test_lib:connect(Host, Port, [{silently_accept_hosts, true},
 						      {user, "foo"},
 						      {password, "morot"},
 						      {user_interaction, false},
 						      {user_dir, UserDir}]),
-    
+
     {ok, ChannelId} = ssh_connection:session_channel(ConnectionRef, infinity),
     ssh_connection:shell(ConnectionRef, ChannelId),
     ssh_connection:send(ConnectionRef, ChannelId, <<"q">>),
-    receive 
+    receive
 	{ssh_cm, ConnectionRef,
 	 {data,0,0, <<"\r\nYou are accessing a dummy, type \"q\" to exit\r\n\n">>}} ->
 	    ssh_connection:send(ConnectionRef, ChannelId, <<"q">>)
-    after 
+    after
 	30000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end,
-    
-    receive 
+
+    receive
      	{ssh_cm, ConnectionRef,{closed, ChannelId}} ->
      	    ok
-    after 
+    after
 	30000 -> ct:fail("timeout ~p:~p",[?MODULE,?LINE])
     end.
 
@@ -1334,6 +1351,17 @@ shell_unicode_string(Config) ->
 		  new_prompt,
 		  {type,"exit()."}
 		 ]).
+
+%%--------------------------------------------------------------------
+shell_latin1_exception(Config) ->
+    new_do_shell(proplists:get_value(io,Config),
+                 [new_prompt,
+                  {type,"1/0."},
+                  {expect,"**"},
+                  {expect,"exception error"},
+                  new_prompt,
+                  {type,"exit()."}
+                 ]).
 
 %%--------------------------------------------------------------------
 %%% Test basic connection with openssh_zlib

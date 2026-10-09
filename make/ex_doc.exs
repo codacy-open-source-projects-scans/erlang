@@ -177,7 +177,17 @@ extras =
 
 annotations = Access.get(local_config, :annotations_for_docs, fn _ -> [] end)
 
-current_datetime = System.os_time() |> DateTime.from_unix!(:native)
+current_datetime =
+  case System.get_env("SOURCE_DATE_EPOCH") do
+    nil ->
+      System.os_time() |> DateTime.from_unix!(:native)
+
+    epoch ->
+      case Integer.parse(epoch) do
+        {seconds, ""} -> DateTime.from_unix!(seconds)
+        _ -> System.os_time() |> DateTime.from_unix!(:native)
+      end
+  end
 
 ## Check if we should treat warnings as errors
 warnings_as_errors =
@@ -252,7 +262,7 @@ config =
     before_closing_body_tag: fn
       :html ->
         """
-          <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+          <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.14.0/dist/mermaid.min.js"></script>
           <script>
           let initialized = false;
 

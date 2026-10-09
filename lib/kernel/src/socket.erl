@@ -218,7 +218,7 @@ This module was introduced in OTP 22.0, as experimental code.
 * In OTP 27.0, the Windows flavored
   ([completion handle](`t:completion_handle/0`))
   API features could be considered no longer experimental.
-* In OTP @OTP-19834@, (experimental) complete support for SCTP was added
+* In OTP 29.0, (experimental) complete support for SCTP was added
   (functionally feature compatible with inet).
   Not (yet) supported for FreeBSD.
 
@@ -370,6 +370,10 @@ server(Addr, Port) ->
               ip_msfilter/0,
               ip_pmtudisc/0,
               ip_tos/0,
+              iptos_value/0,
+              iptos_tos/0,
+              iptos_dscp/0,
+              iptos_native/0,
               ip_pktinfo/0,
 
               ipv6_mreq/0,
@@ -668,13 +672,63 @@ Lowercase `t:atom/0` values corresponding to the C library constants
 -doc """
 C: `IPTOS_*` values.
 
-Lowercase `t:atom/0` values corresponding to the C library constants `IPTOS_*`.
-Some constant(s) may be unsupported by the platform.
+Note that since there are two different representations of TOS;
+according to RFC 1349 ("classic TOS") and RFC 2474 (DSCP),
+we have three different value representations for tos:
+`native` (the raw unencoded value of the TOS octet), `tos` (classic),
+and `dscp`.
+
+When sending or setting (the ip tos option), the user can choose
+between the three different (value) representations.
+When reading, the value is represented as a map with all three
+representations, since 'socket' does not know which one is expected.
+Its then up to the user pick the one they want.
+
+An integer `dscp` value is a DSCP field value that is not known
+from the IANA registry (see `t:iptos_dscp/0`).
 """.
--type ip_tos() :: lowdelay |
-                  throughput |
-                  reliability |
-                  mincost.
+-type ip_tos() :: #{native := iptos_native(),
+                    tos    := iptos_tos(),
+                    dscp   := iptos_dscp() | non_neg_integer()}.
+
+-type iptos_value() :: iptos_tos() | iptos_dscp() | iptos_native().
+%% According to RFC 1349
+-doc """
+Lowercase `t:atom/0` values corresponding to the C library constants `IPTOS_*`.
+The atoms are named like The C library names, but to avoid platform depencendy,
+the set of names and values follow RFC 1349, not the C library header files.
+
+An integer value is a field value that is not named in the RFC.
+""".
+-type iptos_tos()   :: #{precedence := iptos_tos_prec()  | non_neg_integer(),
+                         tos        := iptos_tos_value() | non_neg_integer()}.
+-type iptos_tos_prec() :: netcontrol | internetcontrol | critical_ecp |
+                          flashoverride | flash | immediate | priority |
+                          routine.
+-type iptos_tos_value() :: default |
+                           lowdelay |  throughput | reliability | mincost.
+
+-doc """
+These symbolic DSCP values are according to IANA's
+[Differentiated Services Field Codepoints registry]
+(https://www.iana.org/assignments/dscp-registry/dscp-registry.xhtml).
+""".
+-type iptos_dscp() ::
+        cs0 |
+        le |
+        cs1 |
+        af11 | af12 | af13 |
+        cs2 |
+        af21 | af22 | af23 |
+        cs3 |
+        af31 | af32 | af33 |
+        cs4 |
+        af41 | af42 | af43 |
+        cs5 |
+        voice_admit | nqb | ef |
+        cs6 |
+        cs7.
+-type iptos_native() :: non_neg_integer().
 
 -doc "C: `struct ip_pktinfo`".
 -type ip_pktinfo() ::
@@ -1316,9 +1370,10 @@ _Options for protocol level_ [_`ip`_:](`t:level/0`)
 
 - **`{ip, sendsrcaddr}`** - `Value = boolean()`
 
-- **`{ip, tos}`** - `Value =` [`ip_tos()` ](`t:ip_tos/0`)`| integer()`
+- **`{ip, tos}`** - `Value =` [`iptos_value()` ](`t:iptos_value/0`) | [`ip_tos()` ](`t:ip_tos/0`)
 
-  An `t:integer/0` value is according to the platform's header files.
+  When sending/setting the value is according to `t:iptos_value/0`.
+  When reading/getting the value is according to `t:ip_tos/0`.
 
 - **`{ip, transparent}`** - `Value = boolean()`
 
@@ -1742,7 +1797,7 @@ Corresponds to a C `struct msghdr`, see your platform documentation for
           flags := [msg_flag() | integer()]
          }.
 
--doc(#{since => ~"OTP @OTP-19834@"}).
+-doc(#{since => ~"OTP 29.0"}).
 -doc """
 Notifications can be received on a SCTP socket (type = seqpacket and
 protocol = sctp).
@@ -2061,9 +2116,9 @@ successfully decoded the data.
         #{level := socket,  type := rights,       data := binary()} |
         #{level := socket,  type := credentials,  data := binary()} |
         #{level := ip,      type := tos,          data := binary(),
-          value => ip_tos() | integer()}                            |
+          value => ip_tos()}                                        |
         #{level := ip,      type := recvtos,      data := binary(),
-          value := ip_tos() | integer()}                            |
+          value := ip_tos()}                                        |
         #{level := ip,      type := ttl,          data := binary(),
           value => integer()}                                       |
         #{level := ip,      type := recvttl,      data := binary(),
@@ -2102,7 +2157,7 @@ compatible what is defined in the platform's header files.
         #{level := socket,  type := rights,       data := native_value()} |
         #{level := socket,  type := credentials,  data := native_value()} |
         #{level := ip,      type := tos,          data => native_value(),
-          value => ip_tos() | integer()}                                  |
+          value => iptos_value()}                                         |
         #{level := ip,      type := ttl,          data => native_value(),
           value => integer()}                                             |
         #{level := ip,      type := hoplimit,     data => native_value(),
@@ -3451,7 +3506,7 @@ bind(Socket, Addr) ->
 %% If the domain is inet6, the addresses can be either IPv4 or IPv6.
 %%
 
--doc(#{since => <<"OTP @OTP-19834@">>}).
+-doc(#{since => <<"OTP 29.0">>}).
 -doc """
 Bind a list of socket addreses to a socket.
 
@@ -3949,7 +4004,7 @@ accept_result(LSockRef, AccRef, Result) ->
 %% peeloff - Branch off an association into a separate socket
 %%
 
--doc(#{since => <<"OTP @OTP-19834@">>}).
+-doc(#{since => <<"OTP 29.0">>}).
 -doc """
 Branch off an association into a separate socket.
 
@@ -3970,7 +4025,7 @@ Equivalent to [`peeloff(Socket, AssocId, [])`](`peeloff/3`)
 peeloff(Sock, AssocId) ->
     peeloff(Sock, AssocId, []).
 
--doc(#{since => <<"OTP @OTP-19834@">>}).
+-doc(#{since => <<"OTP 29.0">>}).
 -doc """
 Branch off an association into a separate socket.
 
@@ -7384,7 +7439,7 @@ sockname(Socket) ->
 %%
 %%
 
--doc(#{since => <<"OTP @OTP-19834@">>}).
+-doc(#{since => <<"OTP 29.0">>}).
 -doc """
 Get the socket's address.
 
@@ -7445,7 +7500,7 @@ peername(Socket) ->
 %%
 %%
 
--doc(#{since => <<"OTP @OTP-19834@">>}).
+-doc(#{since => <<"OTP 29.0">>}).
 -doc """
 Return the remote (peer) address(s) of an association of a socket.
 

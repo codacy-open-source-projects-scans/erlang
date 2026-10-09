@@ -37,8 +37,10 @@
          decode_extensions/1,
          ext_oid/1,
          oid_to_ml_dsa_algo/1,
+         oid_to_ml_kem_algo/1,
          oid_to_slh_dsa_algo/1,
          mldsa_algo_to_oid/1,
+         ml_kem_algo_to_oid/1,
          slh_dsa_algo_to_oid/1
         ]).
 
@@ -109,6 +111,8 @@ enc_transform(#'AttributeTypeAndValue'{type=Id, value=Value0}) ->
     case Id of
         ?'id-at-countryName' ->
             #'SingleAttribute'{type=Id, value={correct, Value0}};
+        ?'id-domainComponent' ->
+            #'SingleAttribute'{type=Id, value={correct, Value0}};
         ?'id-emailAddress' ->
             #'SingleAttribute'{type=Id, value={correct, Value0}};
         _ ->
@@ -159,6 +163,8 @@ dec_transform(#'SingleAttribute'{type=Id,value=Value0}) ->
     case {Id, Value0} of
         {?'id-at-countryName', {_,String}} ->
             #'AttributeTypeAndValue'{type=Id, value=String};
+        {?'id-domainComponent', {_,String}} ->
+            #'AttributeTypeAndValue'{type=Id, value=String};
         {?'id-emailAddress', {_,String}} ->
             #'AttributeTypeAndValue'{type=Id, value=String};
         {_, _} ->
@@ -166,8 +172,6 @@ dec_transform(#'SingleAttribute'{type=Id,value=Value0}) ->
     end;
 dec_transform(#'AuthorityKeyIdentifier'{authorityCertIssuer=ACI}=AKI) ->
     AKI#'AuthorityKeyIdentifier'{authorityCertIssuer=dec_transform(ACI)};
-dec_transform([{directoryName, _}]=List) ->
-    [{directoryName, dec_transform(Value)} || {directoryName, Value} <- List];
 dec_transform({directoryName, Value}) ->
     {directoryName, dec_transform(Value)};
 dec_transform({rdnSequence, SeqList}) when is_list(SeqList) ->
@@ -178,9 +182,23 @@ dec_transform({rdnSequence, SeqList}) when is_list(SeqList) ->
 dec_transform(#'NameConstraints'{permittedSubtrees=Permitted, excludedSubtrees=Excluded}) ->
     #'NameConstraints'{permittedSubtrees=dec_transform_sub_tree(Permitted),
 		       excludedSubtrees=dec_transform_sub_tree(Excluded)};
+dec_transform([#'DistributionPoint'{}|_] = List) ->
+    [dec_transform_dist_point(DP) || DP <- List];
+dec_transform(#'AccessDescription'{accessLocation = Name} = AD) ->
+    AD#'AccessDescription'{accessLocation = dec_transform(Name)};
+dec_transform(List) when is_list(List) ->
+    [dec_transform(E) || E <- List];
 dec_transform(Other) ->
     Other.
 
+dec_transform_dist_point(#'DistributionPoint'{
+                            distributionPoint = {Type,DirName},
+                            cRLIssuer = CRLIssuers} = DP) ->
+    DP#'DistributionPoint'{
+      distributionPoint = {Type,dec_transform(DirName)},
+      cRLIssuer = dec_transform(CRLIssuers)};
+dec_transform_dist_point(DP) ->
+    DP.
 
 enc_transform_sub_tree(asn1_NOVALUE) ->
     asn1_NOVALUE;
@@ -214,6 +232,9 @@ supportedPublicKeyAlgorithms(?'id-X448') -> 'ECPoint';
 supportedPublicKeyAlgorithms(?'id-ml-dsa-44') -> 'ML-DSAPublicKey';
 supportedPublicKeyAlgorithms(?'id-ml-dsa-65') -> 'ML-DSAPublicKey';
 supportedPublicKeyAlgorithms(?'id-ml-dsa-87') -> 'ML-DSAPublicKey';
+supportedPublicKeyAlgorithms(?'id-alg-ml-kem-512') -> 'ML-KEMPublicKey';
+supportedPublicKeyAlgorithms(?'id-alg-ml-kem-768') -> 'ML-KEMPublicKey';
+supportedPublicKeyAlgorithms(?'id-alg-ml-kem-1024') -> 'ML-KEMPublicKey';
 supportedPublicKeyAlgorithms(?'id-slh-dsa-sha2-128f') -> 'SLH-DSAPublicKey';
 supportedPublicKeyAlgorithms(?'id-slh-dsa-sha2-128s') -> 'SLH-DSAPublicKey';
 supportedPublicKeyAlgorithms(?'id-slh-dsa-sha2-192f') -> 'SLH-DSAPublicKey';
@@ -342,6 +363,13 @@ oid_to_ml_dsa_algo(?'id-ml-dsa-65') ->
 oid_to_ml_dsa_algo(?'id-ml-dsa-87') ->
     mldsa87.
 
+oid_to_ml_kem_algo(?'id-alg-ml-kem-512') ->
+    mlkem512;
+oid_to_ml_kem_algo(?'id-alg-ml-kem-768') ->
+    mlkem768;
+oid_to_ml_kem_algo(?'id-alg-ml-kem-1024') ->
+    mlkem1024.
+
 oid_to_slh_dsa_algo(?'id-slh-dsa-sha2-128s') ->
     slh_dsa_sha2_128s;
 oid_to_slh_dsa_algo(?'id-slh-dsa-sha2-128f') ->
@@ -373,6 +401,13 @@ mldsa_algo_to_oid(mldsa65) ->
     ?'id-ml-dsa-65';
 mldsa_algo_to_oid(mldsa87) ->
     ?'id-ml-dsa-87'.
+
+ml_kem_algo_to_oid(mlkem512) ->
+    ?'id-alg-ml-kem-512';
+ml_kem_algo_to_oid(mlkem768) ->
+    ?'id-alg-ml-kem-768';
+ml_kem_algo_to_oid(mlkem1024) ->
+    ?'id-alg-ml-kem-1024'.
 
 slh_dsa_algo_to_oid(slh_dsa_sha2_128s) ->
     ?'id-slh-dsa-sha2-128s';
@@ -576,6 +611,8 @@ decode_otp_cert_polices(Ext, Value) ->
     {ok, CPs} = 'OTP-PKIX':decode('OTPCertificatePolicies', Value),
     Ext#'Extension'{extnValue=[translate_cert_polices(CP) || CP <- CPs]}.
 
+translate_cert_polices(#'OTPPolicyInformation'{policyIdentifier = Id, policyQualifiers = asn1_NOVALUE}) ->
+    #'PolicyInformation'{policyIdentifier = Id, policyQualifiers = asn1_NOVALUE};
 translate_cert_polices(#'OTPPolicyInformation'{policyIdentifier = Id, policyQualifiers = Qs0}) ->
     Qs = [translate_cert_polices(Q) || Q <- Qs0],
     #'PolicyInformation'{policyIdentifier = Id, policyQualifiers = Qs};
