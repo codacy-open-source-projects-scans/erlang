@@ -405,6 +405,16 @@ test_negation([], _) ->
 
 %% Test that the JIT only omits the overflow check when it's safe.
 multiplication(_Config) ->
+    %% Exercise power-of-two multiplication without an increment. On ARM,
+    %% the tag correction for 256 fits in an immediate, while 512 does not.
+    -1792 = mul_pow2_imm12(id(-7)),
+    3584 = mul_pow2_large(id(7)),
+    -3584 = mul_pow2_large(id(-7)),
+    21 = mul_small(id(7), id(3)),
+    21 = mul_small(id(-7), id(-3)),
+    ?assertError(badarith, multiply(id(not_a_number), id(2))),
+    false = multiply_guard(id(not_a_number), id(2)),
+
     _ = rand:uniform(),				%Seed generator
     io:format("Seed: ~p", [rand:export_seed()]),
     Mod = list_to_atom(lists:concat([?MODULE,"_",?FUNCTION_NAME])),
@@ -515,6 +525,21 @@ test_multiplication([], _) ->
 mul_add() ->
     [{timetrap, {minutes, 5}}].
 mul_add(_Config) ->
+    MaxSmall = (1 bsl 59) - 1,
+
+    26 = mul_add_literal_lea(id(7)),
+    -16 = mul_add_literal_lea(id(-7)),
+    117 = mul_add_literal_shift(id(7)),
+    -107 = mul_add_literal_shift(id(-7)),
+    54 = mul_add_literal_madd(id(7)),
+    -44 = mul_add_literal_madd(id(-7)),
+    -51 = mul_add_literal_negative(id(7)),
+    61 = mul_add_literal_negative(id(-7)),
+    26 = mul_add_small(id(7), id(3), id(5)),
+    16 = mul_add_small(id(-7), id(-3), id(-5)),
+    MaxSmall = mul_add_extreme_increment(id(0)),
+    -1 = mul_add_extreme_increment(id(1)),
+
     _ = rand:uniform(),				%Seed generator
     io:format("Seed: ~p", [rand:export_seed()]),
     Mod = list_to_atom(lists:concat([?MODULE,"_",?FUNCTION_NAME])),
@@ -729,6 +754,46 @@ madd(A, B, C) -> A * B + C.
 madd(A, B, C, Res) when Res =:= A * B + C -> ok;
 madd(_, _, _, _) -> error.
 
+mul_pow2_imm12(X) when is_integer(X), -8 < X, X < 8 ->
+    X * 256.
+
+mul_pow2_large(X) when is_integer(X), -8 < X, X < 8 ->
+    X * 512.
+
+mul_small(X, Y)
+  when is_integer(X), -8 < X, X < 8,
+       is_integer(Y), -8 < Y, Y < 8 ->
+    X * Y.
+
+multiply(X, Y) ->
+    X * Y.
+
+multiply_guard(X, Y) when X * Y =:= 4 ->
+    true;
+multiply_guard(_, _) ->
+    false.
+
+mul_add_literal_lea(X) when is_integer(X), -8 < X, X < 8 ->
+    X * 3 + 5.
+
+mul_add_literal_shift(X) when is_integer(X), -8 < X, X < 8 ->
+    X * 16 + 5.
+
+mul_add_literal_madd(X) when is_integer(X), -8 < X, X < 8 ->
+    X * 7 + 5.
+
+mul_add_literal_negative(X) when is_integer(X), -8 < X, X < 8 ->
+    X * -8 + 5.
+
+mul_add_extreme_increment(N) when is_integer(N), 0 =< N, N =< 1 ->
+    N * -(1 bsl 59) + ((1 bsl 59) - 1).
+
+mul_add_small(X, Y, Z)
+  when is_integer(X), -8 < X, X < 8,
+       is_integer(Y), -8 < Y, Y < 8,
+       is_integer(Z), -8 < Z, Z < 8 ->
+    X * Y + Z.
+
 
 %% Test that the JIT only omits the overflow check when it's safe.
 division() ->
@@ -765,8 +830,15 @@ div_gen_pairs() ->
     {_, MaxSmall} = determine_small_limits(0),
     NumBitsMaxSmall = num_bits(MaxSmall),
 
-    Divisors = [-8,-2,-1,1,2,3,4,5,8,16,17,64,22222333] ++
+    Divisors = [-8,-2,-1,1,2,3,4,5,7,8,10,16,17,31,64,101,1000,22222333] ++
         [1 bsl P || P <- lists:seq(8, 12) ++ lists:seq(26, 36)],
+
+    LiteralDivisors = [3,7,10,101,1000,(1 bsl (NumBitsMaxSmall-1))+1,MaxSmall],
+    BoundaryPairs = [{A,D} || D <- LiteralDivisors,
+                              A <- lists:usort([0,1,D-1,D,D+1,
+                                                (MaxSmall div D)*D-1,
+                                                (MaxSmall div D)*D,
+                                                MaxSmall,MaxSmall+1])],
 
     %% Generate random pairs of smalls.
     Pairs0 = [{rand:uniform(MaxSmall),
@@ -779,7 +851,8 @@ div_gen_pairs() ->
 
     %% Generate pairs of numbers whose product are bignums.
     [{rand:uniform(MaxSmall),1 bsl Pow} ||
-        Pow <- lists:seq(NumBitsMaxSmall - 4, NumBitsMaxSmall - 1)] ++ Pairs3.
+        Pow <- lists:seq(NumBitsMaxSmall - 4, NumBitsMaxSmall - 1)] ++
+        BoundaryPairs ++ Pairs3.
 
 rand_sign() ->
     case rand:uniform() < 0.2 of

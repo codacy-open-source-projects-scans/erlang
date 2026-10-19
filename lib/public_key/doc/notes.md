@@ -21,6 +21,18 @@ limitations under the License.
 -->
 # Public_Key Release Notes
 
+## Public_Key 1.21.8
+
+### Fixed Bugs and Malfunctions
+
+- Enforce the RFC 5280 basic-constraints CA checks for X.509 version 1 and version 2 certificates during certificate path validation. A v1/v2 certificate carries no extensions and therefore no
+  basicConstraints, so it must never be accepted as a CA; such a certificate is now rejected in issuer position with {bad_cert, missing_basic_constraint} while remaining valid as a leaf. This closes the version-1 path left uncovered by the earlier CVE-2026-42789 fix.
+
+  Own Id: OTP-20423 Aux Id: [PR-11727], [CVE-2026-42789]
+
+[PR-11727]: https://github.com/erlang/otp/pull/11727
+[CVE-2026-42789]: https://nvd.nist.gov/vuln/detail/2026-42789
+
 ## Public_Key 1.21.7
 
 ### Fixed Bugs and Malfunctions
@@ -167,6 +179,18 @@ limitations under the License.
 [PR-10033]: https://github.com/erlang/otp/pull/10033
 [PR-10839]: https://github.com/erlang/otp/pull/10839
 [PR-10993]: https://github.com/erlang/otp/pull/10993
+
+## Public_Key 1.20.3.6
+
+### Fixed Bugs and Malfunctions
+
+- Enforce the RFC 5280 basic-constraints CA checks for X.509 version 1 and version 2 certificates during certificate path validation. A v1/v2 certificate carries no extensions and therefore no
+  basicConstraints, so it must never be accepted as a CA; such a certificate is now rejected in issuer position with {bad_cert, missing_basic_constraint} while remaining valid as a leaf. This closes the version-1 path left uncovered by the earlier CVE-2026-42789 fix.
+
+  Own Id: OTP-20423 Aux Id: [PR-11727], [CVE-2026-42789]
+
+[PR-11727]: https://github.com/erlang/otp/pull/11727
+[CVE-2026-42789]: https://nvd.nist.gov/vuln/detail/2026-42789
 
 ## Public_Key 1.20.3.5
 
@@ -409,6 +433,18 @@ limitations under the License.
 [PR-9677]: https://github.com/erlang/otp/pull/9677
 [PR-9670]: https://github.com/erlang/otp/pull/9670
 [PR-9774]: https://github.com/erlang/otp/pull/9774
+
+## Public_Key 1.17.1.7
+
+### Fixed Bugs and Malfunctions
+
+- Enforce the RFC 5280 basic-constraints CA checks for X.509 version 1 and version 2 certificates during certificate path validation. A v1/v2 certificate carries no extensions and therefore no
+  basicConstraints, so it must never be accepted as a CA; such a certificate is now rejected in issuer position with {bad_cert, missing_basic_constraint} while remaining valid as a leaf. This closes the version-1 path left uncovered by the earlier CVE-2026-42789 fix.
+
+  Own Id: OTP-20423 Aux Id: [PR-11727], [CVE-2026-42789]
+
+[PR-11727]: https://github.com/erlang/otp/pull/11727
+[CVE-2026-42789]: https://nvd.nist.gov/vuln/detail/2026-42789
 
 ## Public_Key 1.17.1.6
 
